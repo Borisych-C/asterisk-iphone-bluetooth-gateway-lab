@@ -1,0 +1,10 @@
+/*
+ * buildopts.h
+ * Automatically generated
+ */
+
+#define OPTIONAL_API 1
+#define TEST_FRAMEWORK 1
+#define AST_BUILDOPT_SUM "1fb7f5c06d7a2052e38d021b3d8ca151"
+#define AST_BUILDOPTS "OPTIONAL_API, TEST_FRAMEWORK"
+#define AST_BUILDOPTS_ALL "OPTIONAL_API, TEST_FRAMEWORK"

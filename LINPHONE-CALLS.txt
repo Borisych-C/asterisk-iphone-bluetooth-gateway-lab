@@ -1,0 +1,124 @@
+PUBLIC CASE-STUDY COPY: identifiers replaced. Historical commands and hashes
+are not current deployment instructions. Start with README.md and docs/INDEX.md.
+Private snapshots/captures referenced below are deliberately excluded.
+
+ИСТОРИЧЕСКИЙ ЭТАП: авторизация у Linphone больше не используется.
+Для текущего восстановления применять ROAMING.txt и CONTEXT.md.
+
+Дополнение 14 ноября, 19:35: по решению пользователя все вызовы к Linphone
+переведены на собственный домен без учётных данных сервиса. 612 и 613 теперь
+оба используют этот путь. Входящие с домашней SIM идут только в Linphone;
+подготовлена авторизованная линия 1003 на нашей АТС для исходящих через SIM.
+Текущая схема и состояние приёмки: ROAMING.txt. Ниже — история этого этапа.
+
+Звонок со стационарного на публичный Linphone — 14 ноября 2026
+
+Позднее проверен прямой вызов без учётных данных Linphone: номер 613,
+отправитель 1002@home.example.net. Пользователь подтвердил речь
+в обе стороны и отображение 1002. Подробности: LINPHONE-FEDERATION.txt.
+На описанном историческом этапе 612 использовал авторизацию; сейчас это отменено.
+
+Набрать 612 и нажать кнопку вызова.
+Адресат: sip:traveler-example@sip.linphone.org, endpoint linphone-push.
+Добавлено в /etc/asterisk/extensions_direct_ip_phone.conf на .128:
+[from-direct-ip-phone]
+exten => 612,1,RtpSourceReset()
+ same => n,Dial(PJSIP/linphone-push/sip:traveler-example@sip.linphone.org,45)
+ same => n,Hangup()
+
+Маршрут применён штатным dialplan reload, без перезапуска Asterisk.
+До изменения: 0 активных каналов. Проверка загруженного dialplan подтвердила
+612@from-direct-ip-phone и правильный адресат. Результаты звонков — ниже.
+Существующий endpoint/auth Linphone сохранён. Пароли телефона не менялись.
+
+Бэкап на .128:
+/var/backups/asterisk-direct-linphone-612-20261114-143512/extensions_direct_ip_phone.conf
+Откат: удалить только добавленные комментарий и три приоритета 612,
+затем asterisk -rx 'dialplan reload'. Полный возврат файла из бэкапа
+допустим только если после этого изменения файл не редактировался.
+
+Исправление отказа до ответа — 14 ноября 2026
+
+Исходный вызов длился 6 секунд, без ответа. Повторная SIP-трассировка показала:
+Linphone server: 407 (обычная авторизация), 100, 110 Push sent;
+через примерно 5 секунд приложение LinphoneiOS/6.2.2 (SDK 5.5.0) вернуло
+488 Not acceptable here. Asterisk передал отказ стационарному, Q.850 cause=58.
+Ответа 180 Ringing не было, поэтому стационарный не включал гудки ожидания.
+Рингтон iPhone был вызван push-уведомлением до приёма SIP INVITE приложением.
+
+Пользователь подтвердил в Linphone: SRTP, шифрование обязательно.
+В исходном предложении Asterisk был RTP/AVP без шифрования.
+В /etc/asterisk/pjsip_linphone_push.conf включены:
+  media_encryption=sdes
+  media_encryption_optimistic=no
+  transport=transport-tls-linphone
+  outbound_proxy=sip:sip.linphone.org:5061\;transport=tls\;lr
+Новый transport-tls-linphone: TLS 1.2, bind 192.168.50.10:5061,
+ca_list_file=/etc/ssl/certs/ca-certificates.crt, verify_server=yes.
+Настройки паролей и аутентификации не изменены. Ключи SRTP передаются внутри TLS.
+Это шифрование участка Asterisk—Linphone, не сквозное шифрование до T780P:
+стационарный продолжает использовать RTP на выделенном кабеле.
+
+Полная конфигурация без паролей:
+linphone-push/config/pjsip_linphone_push.conf
+Резервная копия исходной конфигурации на .128:
+/var/backups/asterisk-linphone-srtp-20261114-144457/pjsip_linphone_push.conf
+Локальная копия и протоколы:
+diagnostics/2026-11-14-linphone-612/
+
+При первом добавлении TLS простого module reload res_pjsip.so недостаточно:
+transport уже виден в CLI, но DNS resolver Asterisk 20.6.0 сохраняет список
+доступных типов транспорта со старта. Получался немедленный 503, cause=34;
+служебный OPTIONS давал PJLIB_UTIL_EDNSNOANSWERREC. В исходниках это
+res/res_pjsip/pjsip_resolver.c: sip_available_transports, sip_replace_resolver;
+ast_sip_initialize_resolver вызывается при начальной загрузке res_pjsip.
+Выполнен core restart gracefully при 0 активных каналах. Через 2 секунды
+служба работала, home-iphone Connected=Yes/Free, оба доработанных модуля загружены.
+Стационарный повторно зарегистрировался. Служебный OPTIONS через TLS получил 200 OK.
+Временный endpoint проверки удалён. Сам сервер и соседние службы не перезапускались.
+
+Применение после обновления/восстановления
+Сначала сравнить актуальные настройки и сохранить их копии. Перенести раздел
+transport-tls-linphone и параметры SRTP/TLS endpoint из указанного файла.
+Существующий защищённый pjsip_linphone_push_auth.conf оставить без изменений.
+Восстановить маршрут 612 выше, сохранив остальные маршруты. Выполнить
+dialplan reload и module reload res_pjsip.so. Если TLS появился впервые,
+нужен core restart gracefully при отсутствии разговоров. Затем проверить
+подключение обоих телефонов и реальный вызов на 612, включая звук в обе стороны.
+Проверку сертификата не отключать. Пароли T780P не менять.
+
+Откат изменения SRTP/TLS
+Вернуть только pjsip_linphone_push.conf из своей свежей резервной копии и
+выполнить module reload res_pjsip.so. Если требуется полностью удалить новый
+транспорт из памяти, завершить откат штатным перезапуском Asterisk при 0 звонков.
+Старый вариант без SRTP несовместим с обязательным SRTP в Linphone и снова
+получит 488; это откат конфигурации, а не рабочее решение исходной проблемы.
+
+Подтверждённый результат
+Контрольный звонок 14 ноября 2026 в 14:54:30 по Израилю:
+через 4 секунды Linphone отправил 180 Ringing, Asterisk передал его T780P.
+Ответ — 14:54:54, завершение — 14:55:05. CDR: ANSWERED, всего 35 секунд,
+разговор 11 секунд. В CDR время записано в UTC (12:54:30–12:55:05).
+Пользователь подтвердил: «Есть гудки и звук в обе стороны».
+Предел покрытия SIP-трассы: ограниченное окно наблюдения закончилось до ответа;
+сам ответ/длительность подтверждены CDR, качество речи — проверкой пользователя.
+После теста: 0 активных вызовов, 1002 Avail (примерно 4 мс OPTIONS),
+home-iphone Connected=Yes/Free. SIP history выключена/очищена, уровень журнала
+pjproject возвращён к стандартному 2; дополнительный постоянный опрос не добавлен.
+Проверен один короткий успешный разговор; длительная стабильность не измерялась.
+Сотовый разговор после этого изменения отдельно не повторялся: проверены
+подключение Bluetooth и загрузка прежних доработанных модулей.
+
+Справочные материалы
+Входящий публичный SIP на стационарный описан отдельно в PUBLIC-SIP.txt.
+Это последующее дополнение; оно не использует отдельную регистрацию Asterisk
+у Linphone и не меняет исходящий короткий номер 612.
+В очищенное поле поиска Linphone вводить:
+  1002@home.example.net:5061;transport=tls
+14 ноября 2026 в 18:55 и 18:56 местного времени пользователь подтвердил
+короткие входящие разговоры из домашнего Wi-Fi и извне: звук в обе стороны,
+отбой со стационарного завершает вызов в Linphone. Проверенный путь — IPv4.
+
+https://docs.asterisk.org/Asterisk_20_Documentation/API_Documentation/Module_Configuration/res_pjsip/
+https://wiki.linphone.org/xwiki/wiki/public/view/Flexisip/Core%20servers/Specifications/Push%20notifications/
+https://github.com/BelledonneCommunications/linphone-iphone/blob/master/Linphone/UI/Main/Settings/Fragments/SettingsAdvancedCallFragment.swift

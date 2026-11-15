@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+
+vpn_interface="awg0"
+vpn_client="10.77.77.4"
+public_name="home.example.net"
+lan_target="192.168.50.10"
+state_file="/run/asterisk-pwa-hairpin-wan"
+table_name="asterisk_pwa_hairpin"
+
+wan_ip="$(getent ahostsv4 "$public_name" | awk 'NR == 1 { print $1 }')"
+case "$wan_ip" in
+    ''|*[!0-9.]*)
+        logger -t asterisk-pwa-hairpin "invalid IPv4 answer for $public_name: $wan_ip"
+        exit 1
+        ;;
+esac
+
+if [ -r "$state_file" ] && [ "$(cat "$state_file")" = "$wan_ip" ] && \
+        /usr/sbin/nft list table ip "$table_name" >/dev/null 2>&1; then
+    exit 0
+fi
+
+rules_file="$(mktemp /run/asterisk-pwa-hairpin.XXXXXX)"
+trap 'rm -f "$rules_file"' EXIT HUP INT TERM
+
+{
+    printf 'table ip %s {\n' "$table_name"
+    printf '  chain prerouting {\n'
+    printf '    type nat hook prerouting priority -105; policy accept;\n'
+    printf '    iifname "%s" ip saddr %s ip daddr %s tcp dport { 443, 8443 } counter dnat to %s:443\n' \
+        "$vpn_interface" "$vpn_client" "$wan_ip" "$lan_target"
+    printf '  }\n'
+    printf '}\n'
+} > "$rules_file"
+
+/usr/sbin/nft --check --file "$rules_file"
+/usr/sbin/nft delete table ip "$table_name" >/dev/null 2>&1 || true
+/usr/sbin/nft --file "$rules_file"
+printf '%s\n' "$wan_ip" > "$state_file"
+chmod 0600 "$state_file"
+logger -t asterisk-pwa-hairpin \
+    "redirecting $vpn_client -> $wan_ip:443 to $lan_target:443"

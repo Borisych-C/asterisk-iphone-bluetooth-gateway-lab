@@ -1,0 +1,10 @@
+{
+  "device": "02:00:00:00:00:01",
+  "adapter": "02:00:00:00:00:02",
+  "phone_timezone": "Asia/Jerusalem",
+  "sip_host": "sip.linphone.org",
+  "sip_target": "sip:traveler-example@sip.linphone.org",
+  "from_domain": "home.example.net",
+  "submit_socket": "/var/lib/asterisk-sms-bridge/submit.sock",
+  "submit_uid": 123
+}

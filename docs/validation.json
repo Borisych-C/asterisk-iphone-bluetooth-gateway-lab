@@ -1,0 +1,18 @@
+{
+  "prepared_date": "2026-11-15",
+  "case_cards": 15,
+  "sms_tests": 18,
+  "dns_scenarios": 16,
+  "c_framing_harness": "passed with ASan/UBSan",
+  "module_compile": [
+    "chan_mobile",
+    "app_rtp_source_reset"
+  ],
+  "module_load_or_live_deploy": false,
+  "patches": "both produce exact final chan_mobile.c",
+  "known_build_warning": "pre-existing USSD format truncation in chan_mobile; no warning from new source-reset code",
+  "privacy": "allowlist export, identity substitution, no private backups/traffic/photos/databases; Gitleaks + manual targeted scan",
+  "gitleaks_version": "8.16.0",
+  "upstream_bug_status": "not refreshed; historical findings explicitly scoped",
+  "runtime_acceptance": "historical documented device tests, not rerun during publication preparation"
+}

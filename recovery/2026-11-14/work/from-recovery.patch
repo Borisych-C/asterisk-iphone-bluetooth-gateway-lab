@@ -1,0 +1,207 @@
+--- a/src/addons/chan_mobile.c
++++ b/src/addons/chan_mobile.c
+@@ -78,7 +78,6 @@
+ #define MBL_CONFIG "chan_mobile.conf"
+ #define MBL_CONFIG_OLD "mobile.conf"
+ 
+-#define DEVICE_FRAME_SIZE 48
+ #define DEVICE_FRAME_FORMAT ast_format_slin
+ #define CHANNEL_FRAME_SIZE 320
+ 
+@@ -132,9 +131,11 @@
+ 	int rfcomm_socket;				/* rfcomm socket descriptor */
+ 	char rfcomm_buf[256];
+ 	char io_buf[CHANNEL_FRAME_SIZE + AST_FRIENDLY_OFFSET];
+-	struct ast_smoother *bt_out_smoother;			/* our bt_out_smoother, for making 48 byte frames */
++	struct ast_smoother *bt_out_smoother;			/* Packetizes outgoing PCM for the current host transport. */
+ 	struct ast_smoother *bt_in_smoother;			/* our smoother, for making "normal" CHANNEL_FRAME_SIZEed byte frames */
+ 	int sco_socket;					/* sco socket descriptor */
++	uint16_t sco_mtu;
++	uint16_t sco_tx_size;
+ 	pthread_t monitor_thread;			/* monitor thread handle */
+ 	int timeout;					/*!< used to set the timeout for rfcomm data (may be used in the future) */
+ 	unsigned int no_callsetup:1;
+@@ -244,6 +245,8 @@
+ static int sco_write(int s, char *buf, int len);
+ static int sco_accept(int *id, int fd, short events, void *data);
+ static int sco_bind(struct adapter_pvt *adapter);
++static void sco_configure_socket(struct mbl_pvt *pvt);
++static void sco_observe_packet(struct mbl_pvt *pvt, unsigned int size);
+ 
+ static void *do_sco_listen(void *data);
+ static int sdp_search(char *addr, int profile);
+@@ -857,7 +860,7 @@
+ 	else
+ 		pvt->do_alignment_detection = 0;
+ 
+-	ast_smoother_reset(pvt->bt_out_smoother, DEVICE_FRAME_SIZE);
++	ast_smoother_reset(pvt->bt_out_smoother, pvt->sco_tx_size ? pvt->sco_tx_size : CHANNEL_FRAME_SIZE);
+ 	ast_smoother_reset(pvt->bt_in_smoother, CHANNEL_FRAME_SIZE);
+ 	ast_dsp_digitreset(pvt->dsp);
+ 
+@@ -1134,7 +1137,7 @@
+ 	pvt->fr.data.ptr = pvt->io_buf + AST_FRIENDLY_OFFSET;
+ 
+ 	do {
+-		r = recv(pvt->sco_socket, pvt->fr.data.ptr, DEVICE_FRAME_SIZE, MSG_DONTWAIT);
++		r = recv(pvt->sco_socket, pvt->fr.data.ptr, CHANNEL_FRAME_SIZE, MSG_DONTWAIT);
+ 		if (r <= 0) {
+ 			if (r == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
+ 				ast_debug(1, "[%s] SCO audio closed (%d), waiting for a new connection\n",
+@@ -1142,6 +1145,7 @@
+ 				ast_channel_set_fd(ast, 0, -1);
+ 				close(pvt->sco_socket);
+ 				pvt->sco_socket = -1;
++				pvt->sco_tx_size = 0;
+ 				ast_smoother_reset(pvt->bt_in_smoother, CHANNEL_FRAME_SIZE);
+ 			}
+ 
+@@ -1150,6 +1154,12 @@
+ 			goto e_return;
+ 		}
+ 
++		/* The socket carries signed 16-bit PCM, not on-air CVSD bytes. */
++		if (r % 2) {
++			fr = &ast_null_frame;
++			goto e_return;
++		}
++		sco_observe_packet(pvt, r);
+ 		pvt->fr.datalen = r;
+ 		pvt->fr.samples = r / 2;
+ 
+@@ -1186,10 +1196,14 @@
+ 		CHANNEL_DEADLOCK_AVOIDANCE(ast);
+ 	}
+ 
+-	ast_smoother_feed(pvt->bt_out_smoother, frame);
+-
+-	while ((f = ast_smoother_read(pvt->bt_out_smoother))) {
+-		sco_write(pvt->sco_socket, f->data.ptr, f->datalen);
++	/* In particular for USB, wait for a received host packet. SCO_OPTIONS
++	 * is a maximum, and the eSCO event describes the radio payload.
++	 */
++	if (pvt->sco_socket != -1 && pvt->sco_tx_size) {
++		ast_smoother_feed(pvt->bt_out_smoother, frame);
++		while ((f = ast_smoother_read(pvt->bt_out_smoother))) {
++			sco_write(pvt->sco_socket, f->data.ptr, f->datalen);
++		}
+ 	}
+ 
+ 	ast_mutex_unlock(&pvt->lock);
+@@ -1886,7 +1900,7 @@
+ 
+ 	ast_debug(3, "sco_write()\n");
+ 
+-	r = write(s, buf, len);
++	r = send(s, buf, len, MSG_DONTWAIT | MSG_NOSIGNAL);
+ 	if (r == -1) {
+ 		ast_debug(3, "sco write error %d\n", errno);
+ 		return 0;
+@@ -1894,6 +1908,44 @@
+ 
+ 	return 1;
+ 
++}
++
++static uint16_t sco_host_packet_size(unsigned int received, unsigned int mtu)
++{
++	if (received < 2 || received % 2 || received > CHANNEL_FRAME_SIZE || mtu < 2) {
++		return 0;
++	}
++	return MIN(received, mtu & ~1u);
++}
++
++static void sco_observe_packet(struct mbl_pvt *pvt, unsigned int received)
++{
++	uint16_t size = sco_host_packet_size(received, pvt->sco_mtu);
++
++	if (size != pvt->sco_tx_size) {
++		pvt->sco_tx_size = size;
++		/* Discard an old partial output packet on a transport size change. */
++		ast_smoother_reset(pvt->bt_out_smoother, size ? size : CHANNEL_FRAME_SIZE);
++		ast_debug(1, "[%s] SCO host TX size %u, received %u, socket MTU %u\n",
++			pvt->id, (unsigned int)size, received, (unsigned int)pvt->sco_mtu);
++	}
++}
++
++static void sco_configure_socket(struct mbl_pvt *pvt)
++{
++	struct sco_options options;
++	socklen_t length = sizeof(options);
++
++	pvt->sco_mtu = 0;
++	pvt->sco_tx_size = 0;
++	ast_smoother_reset(pvt->bt_out_smoother, CHANNEL_FRAME_SIZE);
++	ast_smoother_reset(pvt->bt_in_smoother, CHANNEL_FRAME_SIZE);
++	if (getsockopt(pvt->sco_socket, SOL_SCO, SCO_OPTIONS, &options, &length)
++		|| length != sizeof(options)) {
++		ast_log(LOG_WARNING, "[%s] cannot read SCO socket MTU\n", pvt->id);
++		return;
++	}
++	pvt->sco_mtu = options.mtu;
+ }
+ 
+ /*!
+@@ -1907,9 +1959,7 @@
+ 	struct sockaddr_sco addr;
+ 	socklen_t addrlen;
+ 	struct mbl_pvt *pvt;
+-	socklen_t len;
+ 	char saddr[18];
+-	struct sco_options so;
+ 	int sock;
+ 
+ 	addrlen = sizeof(struct sockaddr_sco);
+@@ -1918,17 +1968,14 @@
+ 		return 0;
+ 	}
+ 
+-	len = sizeof(so);
+-	getsockopt(sock, SOL_SCO, SCO_OPTIONS, &so, &len);
+-
+ 	ba2str(&addr.sco_bdaddr, saddr);
+-	ast_debug(1, "Incoming Audio Connection from device %s MTU is %d\n", saddr, so.mtu);
++	ast_debug(1, "Incoming Audio Connection from device %s\n", saddr);
+ 
+ 	/* figure out which device this sco connection belongs to */
+ 	pvt = NULL;
+ 	AST_RWLIST_RDLOCK(&devices);
+ 	AST_RWLIST_TRAVERSE(&devices, pvt, entry) {
+-		if (!bacmp(&pvt->addr, &addr.sco_bdaddr))
++		if (pvt->adapter == adapter && !bacmp(&pvt->addr, &addr.sco_bdaddr))
+ 			break;
+ 	}
+ 	AST_RWLIST_UNLOCK(&devices);
+@@ -1945,6 +1992,7 @@
+ 	}
+ 
+ 	pvt->sco_socket = sock;
++	sco_configure_socket(pvt);
+ 	if (pvt->owner) {
+ 		ast_channel_set_fd(pvt->owner, 0, sock);
+ 	} else {
+@@ -4182,6 +4230,7 @@
+ 						goto e_cleanup;
+ 					}
+ 
++					sco_configure_socket(pvt);
+ 					ast_channel_set_fd(pvt->owner, 0, pvt->sco_socket);
+ 
+ 					mbl_queue_control(pvt, AST_CONTROL_ANSWER);
+@@ -4208,6 +4257,7 @@
+ 					goto e_cleanup;
+ 				}
+ 
++				sco_configure_socket(pvt);
+ 				pvt->incoming = 1;
+ 
+ 				if (!(chan = mbl_new(AST_STATE_UP, pvt, NULL, NULL, NULL))) {
+@@ -4544,7 +4594,7 @@
+ 	pvt->has_sms = 1;
+ 
+ 	/* setup the bt_out_smoother */
+-	if (!(pvt->bt_out_smoother = ast_smoother_new(DEVICE_FRAME_SIZE))) {
++	if (!(pvt->bt_out_smoother = ast_smoother_new(CHANNEL_FRAME_SIZE))) {
+ 		ast_log(LOG_ERROR, "Skipping device %s. Error setting up frame bt_out_smoother.\n", cat);
+ 		goto e_free_pvt;
+ 	}

@@ -1,0 +1,7 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Only SHA256 records in the source-header integrity manifest, not credentials"
+regexTarget = "line"
+regexes = ['''^\s*"(?:include-dev|include-source|include-bluetooth|src)/[^"\n]+": "[a-f0-9]{64}"[,]?\s*$''']

@@ -1,0 +1,27 @@
+{
+  "name": "asterisk-iphone-bluetooth-gateway-lab",
+  "visibility": "public",
+  "description": "Evidence-led Asterisk/iPhone Bluetooth gateway fixes: one-way audio, SCO, RTP SSRC, Linphone TLS/SRTP, BlueZ MAP SMS/iMessage. Agent-friendly cases and tests.",
+  "topics": [
+    "asterisk",
+    "chan-mobile",
+    "iphone",
+    "bluetooth",
+    "hfp",
+    "sco",
+    "linphone",
+    "sip",
+    "srtp",
+    "rtp",
+    "bluez",
+    "sms",
+    "imessage",
+    "troubleshooting",
+    "ai-agents",
+    "reproducible-research",
+    "voip",
+    "linux",
+    "map-profile",
+    "telephony"
+  ]
+}

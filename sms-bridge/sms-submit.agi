@@ -1,0 +1,68 @@
+#!/usr/bin/python3
+"""Authenticated Asterisk MESSAGE -> local socket. Never log message contents."""
+import hashlib,json,re,socket,sys
+IN=sys.stdin.buffer
+OUT=sys.stdout.buffer
+
+def command(text):
+    OUT.write(text.encode()+b'\n');OUT.flush()
+
+def agi(text):
+    command(text)
+    response=IN.readline(16384).rstrip(b'\r\n')
+    match=re.fullmatch(rb'200 result=1 \((.*)\)',response)
+    return match[1].decode('utf-8') if match else ''
+
+def exact(size):
+    result=b''
+    while len(result)<size:
+        part=IN.read(size-len(result))
+        if not part:raise ValueError('incomplete AGI response')
+        result+=part
+    return result
+
+def field(expression):
+    # Read exact byte length, so embedded newlines/parentheses are not delimiters.
+    # Do not use BASE64_ENCODE: it truncated tested lengths on this Asterisk build.
+    length=agi('GET FULL VARIABLE "${LEN('+expression+')}"')
+    if not length.isdigit() or int(length)>8192:raise ValueError('invalid field length')
+    size=int(length)
+    command('GET FULL VARIABLE "'+expression+'"')
+    if exact(len(b'200 result='))!=b'200 result=':raise ValueError('bad AGI response')
+    result=exact(1)
+    if result==b'0':
+        if IN.readline(64) not in (b'\n',b'\r\n') or size:raise ValueError('missing field')
+        return ''
+    if result!=b'1' or exact(2)!=b' (':raise ValueError('bad AGI field prefix')
+    data=exact(size)
+    if IN.readline(64) not in (b')\n',b')\r\n'):raise ValueError('AGI field length mismatch')
+    return data.decode('utf-8',errors='strict')
+
+def main():
+    env={}
+    while True:
+        line=IN.readline(8192)
+        if line in (b'\n',b'\r\n',b''):break
+        key,sep,value=line.decode().rstrip('\r\n').partition(': ')
+        if sep:env[key]=value
+    if env.get('agi_context')!='from-travel-sms':raise ValueError('wrong context')
+    to=field('${MESSAGE(to)}');body=field('${MESSAGE(body)}')
+    call_id=field('${MESSAGE_DATA(Call-ID)}');cseq=field('${MESSAGE_DATA(CSeq)}')
+    identity=json.dumps([call_id or env.get('agi_uniqueid',''),cseq,to,body],ensure_ascii=False)
+    key=hashlib.sha256(identity.encode()).hexdigest()
+    payload=json.dumps(dict(id=key,to=to,body=body,check_only=env.get('agi_extension')=='smscheck'),ensure_ascii=False).encode()+b'\n'
+    if len(payload)>8192:raise ValueError('oversize')
+    with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as s:
+        s.settimeout(8);s.connect('/var/lib/asterisk-sms-bridge/submit.sock');s.sendall(payload)
+        raw=b''
+        while b'\n' not in raw and len(raw)<2048:
+            part=s.recv(2048)
+            if not part:break
+            raw+=part
+        result=json.loads(raw)
+    agi('SET VARIABLE SMS_SUBMIT_STATUS '+('ACCEPTED' if result.get('ok') else 'REJECTED'))
+
+if __name__=='__main__':
+    try:main()
+    except Exception:
+        agi('SET VARIABLE SMS_SUBMIT_STATUS ERROR')

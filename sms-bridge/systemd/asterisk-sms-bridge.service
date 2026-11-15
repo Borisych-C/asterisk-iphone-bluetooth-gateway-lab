@@ -1,0 +1,20 @@
+[Unit]
+Description=Home iPhone SMS to Linphone through Bluetooth MAP
+Wants=obex.service
+After=obex.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/lib/asterisk-sms-bridge/bridge.py --config %h/.config/asterisk-sms-bridge/config.json --state %h/.local/state/asterisk-sms-bridge
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=65
+UMask=0077
+NoNewPrivileges=yes
+LogRateLimitIntervalSec=60
+LogRateLimitBurst=30
+
+[Install]
+WantedBy=default.target

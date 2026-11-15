@@ -1,0 +1,9 @@
+; Installed on the Asterisk host with mode 0640 after masked local input.
+
+[linphone-push-auth]
+type=auth
+auth_type=userpass
+username=traveler-example
+realm=sip.linphone.org
+password=__LINPHONE_PASSWORD__
+

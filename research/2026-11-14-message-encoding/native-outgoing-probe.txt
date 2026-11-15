@@ -1,0 +1,2 @@
+No MESSAGE received at the temporary direct URI
+Web control result {"code":"0"}

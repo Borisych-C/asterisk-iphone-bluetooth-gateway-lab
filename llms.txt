@@ -1,0 +1,15 @@
+PUBLIC CASE-STUDY COPY: identifiers replaced. Historical commands and hashes
+are not current deployment instructions. Start with README.md and docs/INDEX.md.
+Private snapshots/captures referenced below are deliberately excluded.
+
+# Asterisk iPhone Bluetooth Gateway Troubleshooting Lab
+> Evidence-led diagnostic cases, patches and tests; no private production state.
+
+- [Start](README.md): architecture, verified outcomes and limits.
+- [Agent instructions](AGENTS.md): safe navigation and evidence rules.
+- [Symptom index](docs/INDEX.md): symptom → cause → fix → reproduction.
+- [Structured cases](docs/issues.json): JSON records with evidence level and source paths.
+- [Phone quirks](docs/DEVICE-QUIRKS.md): iPhone MAP permission, SCO, Linphone UI, T780P glyphs.
+- [Build/test](docs/BUILD-AND-TEST.md): offline checks versus device tests.
+- [Scripts](docs/SCRIPT-INVENTORY.md): source inventory and side effects.
+- [Publication/privacy](docs/PUBLICATION.md): what was excluded and residual limitations.

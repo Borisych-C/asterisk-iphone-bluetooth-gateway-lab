@@ -1,0 +1,7 @@
+/etc/systemd/system/duckdns-ip-update.service
+/usr/local/bin/certbot-duckdns-cleanup.sh
+/usr/local/bin/duckdns-ip-update.sh
+/usr/local/bin/issue-webdav-cert.sh
+/usr/local/bin/certbot-duckdns-auth.sh
+
+{"backup": "/var/backups/duckdns-ip-update/20261114-180525", "installed": ["/usr/local/bin/duckdns-ip-update.sh", "/etc/duckdns-ip-update.conf"], "timer_restored": true}

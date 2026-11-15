@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "sco-false-hangup",
+      "title": "Call disconnects immediately on answer",
+      "keywords": [
+        "chan_mobile NULL frame",
+        "partial read",
+        "EAGAIN",
+        "ECONNRESET",
+        "iPhone SCO replacement"
+      ],
+      "evidence_level": "confirmed-reproduced",
+      "diagnosis": "The old read path could return NULL after a partial frame or transient SCO failure. NULL means channel termination, not temporarily missing audio. The iPhone also replaced SCO around answer.",
+      "resolution": "Keep call lifecycle separate from audio socket lifecycle; return ast_null_frame, discard incomplete buffers on disconnect and accept the replacement socket.",
+      "validation_and_limits": "Model tests cover partial frames, EAGAIN/EINTR, EOF, reset and reconnect. Real calls survived replacement. Cause of every kernel Bluetooth warning was not established.",
+      "source": "recovery/2026-11-14/work/chan_mobile.c",
+      "test_or_evidence": "recovery/2026-11-14/work/test.c",
+      "case": "docs/cases/sco-false-hangup.md"
+    },
+    {
+      "id": "sco-host-packet-size",
+      "title": "One-way audio despite successful Bluetooth writes",
+      "keywords": [
+        "SCO_OPTIONS MTU",
+        "eSCO TX_Packet_Length",
+        "USB PCM 48 vs radio 60",
+        "CVSD"
+      ],
+      "evidence_level": "confirmed-local",
+      "diagnosis": "An intermediate agent change confused on-air eSCO packet length with host PCM framing. The tested device used 60-byte radio values and 48-byte host blocks; socket MTU is a limit.",
+      "resolution": "Observe valid received 16-bit PCM block length, bounded by SCO_OPTIONS; reset partial buffers when size or socket changes. Do not hard-code 48 or 60.",
+      "validation_and_limits": "Tests cover 48/60/96/120 and MTU bounds. This is host packet inference for the tested transport, not a claim that all Bluetooth devices negotiate identical RX/TX framing.",
+      "source": "recovery/2026-11-14/work/host_framing.inc",
+      "test_or_evidence": "recovery/2026-11-14/work/test.c",
+      "case": "docs/cases/sco-host-packet-size.md"
+    },
+    {
+      "id": "rtp-source-reset",
+      "title": "RTP arrives but outgoing Bluetooth audio stops intermittently",
+      "keywords": [
+        "Asterisk ast_translate NULL",
+        "SSRC change",
+        "seqno reset",
+        "2016_opus_plc.patch",
+        "Debian 1150408",
+        "Ubuntu 2053070"
+      ],
+      "evidence_level": "confirmed-reproduced",
+      "diagnosis": "The distribution translator patch retained old sequence history across a new SSRC. A smaller random new sequence looked late; RTP kept arriving but no PCM reached mbl_write.",
+      "resolution": "Opt-in RtpSourceReset framehook resets translator sequence history on AST_CONTROL_SRCCHANGE. Keep late packet rejection for the same source. Inspect the installed distro code, not only upstream version tags.",
+      "validation_and_limits": "Isolated real PCMA\u2192PCM test: failing phases 0/50 before; 450/450 correct after; an extra genuinely late packet still dropped. Real calls confirmed. Rebuild after ABI changes; upstream bug status must be checked separately.",
+      "source": "recovery/2026-11-14/work/app_rtp_source_reset.c",
+      "test_or_evidence": "recovery/2026-11-14/work/isolated-rtp.py",
+      "case": "docs/cases/rtp-source-reset.md"
+    },
+    {
+      "id": "iphone-map-permission",
+      "title": "iPhone Bluetooth Show Notifications switch is missing",
+      "keywords": [
+        "iOS iPhone 16 MAP OBEX MessageAccess permission access denied missing toggle"
+      ],
+      "evidence_level": "observed-device",
+      "diagnosis": "Working HFP pairing did not expose MAP permission initially. The first MAP request returned access denied. After reopening the Bluetooth device details the switch appeared.",
+      "resolution": "Pair/connect; issue one MAP access request; reopen Settings \u2192 Bluetooth \u2192 device info; enable Show Notifications. Then retry reading. Do not repeatedly re-pair as the first response.",
+      "validation_and_limits": "Observed on this iPhone, iOS version not recorded. This is a message access/notification permission, not proof of a separate send-SMS permission. Outgoing PushMessage was tested independently.",
+      "source": "sms-bridge/bridge.py",
+      "test_or_evidence": "SMS-BRIDGE.txt",
+      "case": "docs/cases/iphone-map-permission.md"
+    },
+    {
+      "id": "iphone-map-metadata",
+      "title": "Previously delivered SMS appears again after reconnect",
+      "keywords": [
+        "MAP timestamp shifted one second duplicate SMS message handle fingerprint"
+      ],
+      "evidence_level": "confirmed-local",
+      "diagnosis": "The iPhone re-reported one message with a timestamp one second earlier. A metadata-based identity treated it as new.",
+      "resolution": "Store sender/body digest and tolerate \u00b12 seconds; retain aliases for changed metadata keys. Do not resend old rows during migration.",
+      "validation_and_limits": "Different messages outside the window remain distinct. Two genuine identical messages from the same sender inside two seconds may coalesce. This is an explicit heuristic, not exactly-once delivery.",
+      "source": "sms-bridge/bridge.py",
+      "test_or_evidence": "sms-bridge/tests/test_bridge.py",
+      "case": "docs/cases/iphone-map-metadata.md"
+    },
+    {
+      "id": "iphone-map-outgoing",
+      "title": "PushMessage completes but recipient has no SMS",
+      "keywords": [
+        "iPhone MAP Uploading bMessage originator vCard green bubble Not Delivered SMS iMessage"
+      ],
+      "evidence_level": "observed-device",
+      "diagnosis": "MAP completion means phone acceptance, not carrier delivery. One accepted transfer produced Not Delivered; manual SMS retry succeeded. A later new message arrived automatically after delay.",
+      "resolution": "Use UTF-8 bMessage with originator/recipient structure; distinguish queued, submitting, handed-to-phone and unknown. Never automatically repeat an ambiguous cellular send.",
+      "validation_and_limits": "An empty originator vCard was added, but the user also changed conversation send mode: its individual causal effect is not proven. iPhone may choose iMessage. Long multipart SMS and carrier delivery receipts unverified.",
+      "source": "sms-bridge/outgoing.py",
+      "test_or_evidence": "sms-bridge/tests/test_outgoing.py",
+      "case": "docs/cases/iphone-map-outgoing.md"
+    },
+    {
+      "id": "linphone-contact-selection",
+      "title": "SMS goes to a different number from the contact card",
+      "keywords": [
+        "Linphone iOS address book multiple numbers SIP MESSAGE sms- prefix"
+      ],
+      "evidence_level": "user-observed",
+      "diagnosis": "User observed Linphone selecting another number from a multi-number contact. Separate malformed @ input also occurred. No upstream client code defect was independently proven.",
+      "resolution": "Use sms-972501234567@home.example.net on the authenticated Home SIM account, select that exact SIP result. Strip sms- server-side before number normalization.",
+      "validation_and_limits": "The prefix bypass worked in the observed workflow. Treat as a UI workaround, not an established universal Linphone bug.",
+      "source": "sms-bridge/outgoing.py",
+      "test_or_evidence": "sms-bridge/tests/test_outgoing.py",
+      "case": "docs/cases/linphone-contact-selection.md"
+    },
+    {
+      "id": "agi-field-truncation",
+      "title": "invalid-address even when MESSAGE(to) is correct",
+      "keywords": [
+        "Asterisk AGI BASE64_ENCODE truncated .org .o UTF-8 exact LEN multiline"
+      ],
+      "evidence_level": "confirmed-local",
+      "diagnosis": "The original MESSAGE(to) was complete, but the tested BASE64_ENCODE/AGI path lost trailing bytes at some lengths. Short check addresses masked the problem.",
+      "resolution": "Read exact raw byte length reported by LEN; validate delimiters and UTF-8. Keep message text out of argv/logs. Do not attribute this to the Base64 algorithm itself.",
+      "validation_and_limits": "Live authenticated TLS check verified hash equality of URI, Unicode multiline body, Call-ID and CSeq. Regression tests vary lengths and embedded delimiters. Root cause inside the specific Base64 implementation was not fully upstream-localized.",
+      "source": "sms-bridge/sms-submit.agi",
+      "test_or_evidence": "sms-bridge/tests/test_agi.py",
+      "case": "docs/cases/agi-field-truncation.md"
+    },
+    {
+      "id": "linphone-srtp-profile",
+      "title": "Registered client immediately receives 488 or cannot establish media",
+      "keywords": [
+        "Linphone third-party account RTP/SAVP RTP/SAVPF use_avpf SRTP SDES TLS"
+      ],
+      "evidence_level": "confirmed-local",
+      "diagnosis": "The new third-party account offered SAVP while its endpoint expected SAVPF. A different route of the same client offered a different profile.",
+      "resolution": "Match SDP per endpoint; for the observed third-party account use_avpf=no, keep mandatory SDES SRTP and TLS. Do not disable encryption to hide profile mismatch.",
+      "validation_and_limits": "Authenticated echo and real calls passed. Do not copy one endpoint profile to all Linphone routes.",
+      "source": "roaming/config/pjsip_roaming.conf",
+      "test_or_evidence": "roaming/probe-echo.py",
+      "case": "docs/cases/linphone-srtp-profile.md"
+    },
+    {
+      "id": "caller-id-whitespace",
+      "title": "Caller number exists in SIP but is not displayed",
+      "keywords": [
+        "iPhone Bluetooth CNAM eight spaces display name CALLERID num Linphone"
+      ],
+      "evidence_level": "confirmed-local",
+      "diagnosis": "From URI contained the number but Bluetooth CNAM supplied eight spaces as display name.",
+      "resolution": "Set caller ID display name from number before Dial, preserving privacy policy.",
+      "validation_and_limits": "User confirmed number on external incoming call; empty display data is not evidence of missing signaling.",
+      "source": "roaming/config/extensions_roaming.conf",
+      "test_or_evidence": "ROAMING.txt",
+      "case": "docs/cases/caller-id-whitespace.md"
+    },
+    {
+      "id": "nat-rtp-range",
+      "title": "Call connects with missing audio or does not hang up",
+      "keywords": [
+        "Sagemcom port forwarding range InternalPort collapse hairpin NAT Contact ACK BYE local_net"
+      ],
+      "evidence_level": "confirmed-local",
+      "diagnosis": "The tested router API range rule mapped multiple external RTP ports to one internal port. Separately, broad local_net classification on hairpin calls advertised a private Contact.",
+      "resolution": "Use verified per-port forwarding and narrow transport local_net appropriate to topology. Check Contact/SDP, ACK and BYE in both LAN hairpin and truly external calls.",
+      "validation_and_limits": "16 separate RTP port mappings were tested. This does not prove all router range implementations are defective. Original agent range assumption was wrong for this API.",
+      "source": "network/public-sip/router-forwarding.py",
+      "test_or_evidence": "network/public-sip/probe.py",
+      "case": "docs/cases/nat-rtp-range.md"
+    },
+    {
+      "id": "dns-stale-ipv6",
+      "title": "Public name points to unavailable IPv6",
+      "keywords": [
+        "DuckDNS AAAA IPv6 prefix delegation absent stale global address IPv4"
+      ],
+      "evidence_level": "confirmed-local",
+      "diagnosis": "ISP prefix availability varied; stale AAAA could point to an address no longer assigned.",
+      "resolution": "Update A/AAAA from the intended host and explicitly clear obsolete AAAA when no valid global IPv6 exists. Distinguish address absence from observation failure.",
+      "validation_and_limits": "Working voice acceptance used IPv4. Returning IPv6 requires separate SIP/RTP/firewall verification.",
+      "source": "network/duckdns/update_duckdns.sh",
+      "test_or_evidence": "network/duckdns/test_updater.py",
+      "case": "docs/cases/dns-stale-ipv6.md"
+    },
+    {
+      "id": "t780p-character-map",
+      "title": "Russian SIP MESSAGE is mojibake despite Russian menus",
+      "keywords": [
+        "T780P CP1251 CP1252 UTF-8 glyph chart bytes 0-255 transliteration Hebrew"
+      ],
+      "evidence_level": "observed-device",
+      "diagnosis": "Localized menu fonts did not imply Unicode support for received messages. Actual glyphs differed from assumed encoding tables.",
+      "resolution": "Use empirical byte charts and the recorded visual-russian-v2 mapping for this firmware. Control bytes yielded no useful extra alphabet; NUL truncated display.",
+      "validation_and_limits": "User approved visually readable approximations. This is not Unicode support or ordinary phonetic transliteration. Hebrew\u2192Russian\u2192glyph substitution was proposed for this debug phone, not used by the final Unicode Linphone bridge.",
+      "source": "research/2026-11-14-message-encoding/visual-russian-v2.json",
+      "test_or_evidence": "tools/send-byte-chart.py",
+      "case": "docs/cases/t780p-character-map.md"
+    },
+    {
+      "id": "linphone-uri-input",
+      "title": "SIP URI pasted into search fails or uses unexpected transport",
+      "keywords": [
+        "Linphone iOS search field sip sips leading colon transport=tls 5061"
+      ],
+      "evidence_level": "observed-client",
+      "diagnosis": "The client log showed unexpected UDP in one attempt and a malformed leading colon in another. Origin of the extra character was not established.",
+      "resolution": "Clear search completely; in the observed UI enter user@home.example.net:5061;transport=tls without sip: and select the exact result. Full SIP URI syntax in other APIs remains valid.",
+      "validation_and_limits": "Verified on the tested client workflow. Do not generalize to every Linphone version or claim SIPS is inherently broken.",
+      "source": "PUBLIC-SIP.txt",
+      "test_or_evidence": "network/public-sip/probe.py",
+      "case": "docs/cases/linphone-uri-input.md"
+    },
+    {
+      "id": "notification-burst",
+      "title": "Seven service messages appear at once after one SMS",
+      "keywords": [
+        "Linphone push notification batching queued check status spam"
+      ],
+      "evidence_level": "confirmed-sender-only",
+      "diagnosis": "Server recorded four checks, one old rejection and two success-path statuses at different times. User saw seven together. One cellular request existed; batching location was not identified.",
+      "resolution": "Do not send diagnostic or queued notifications to the user chat. Keep one phone-acceptance notice and explicit errors. Record diagnostic results in logs.",
+      "validation_and_limits": "Do not claim seven SMS sends, or blame a particular client/server queue without evidence. A quiet check verified no new chat message.",
+      "source": "sms-bridge/outgoing.py",
+      "test_or_evidence": "SMS-SEND.txt",
+      "case": "docs/cases/notification-burst.md"
+    }
+  ]
+}

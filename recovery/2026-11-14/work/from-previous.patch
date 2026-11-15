@@ -1,0 +1,413 @@
+--- a/src/addons/chan_mobile.c
++++ b/src/addons/chan_mobile.c
+@@ -78,7 +78,6 @@
+ #define MBL_CONFIG "chan_mobile.conf"
+ #define MBL_CONFIG_OLD "mobile.conf"
+ 
+-#define LEGACY_SCO_FRAME_SIZE 48
+ #define DEVICE_FRAME_FORMAT ast_format_slin
+ #define CHANNEL_FRAME_SIZE 320
+ 
+@@ -94,16 +93,6 @@
+ enum mbl_type {
+ 	MBL_TYPE_PHONE,
+ 	MBL_TYPE_HEADSET
+-};
+-
+-/* One synchronous audio connection per adapter. Protected by sco_event_lock. */
+-struct sco_parameters {
+-	bdaddr_t peer;
+-	uint16_t handle;
+-	uint16_t rx_len;
+-	uint16_t tx_len;
+-	unsigned int valid:1;
+-	unsigned int legacy:1;
+ };
+ 
+ struct adapter_pvt {
+@@ -115,10 +104,6 @@
+ 	unsigned int alignment_detection:1;		/* do alignment detection on this adapter? */
+ 	struct io_context *io;				/*!< io context for audio connections */
+ 	struct io_context *accept_io;			/*!< io context for sco listener */
+-	ast_mutex_t sco_event_lock;
+-	struct sco_parameters sco_parameters;
+-	int sco_event_socket;
+-	int *sco_event_id;
+ 	int *sco_id;					/*!< the io context id of the sco listener socket */
+ 	int sco_socket;					/*!< sco listener socket */
+ 	pthread_t sco_listener_thread;			/*!< sco listener thread */
+@@ -146,10 +131,9 @@
+ 	int rfcomm_socket;				/* rfcomm socket descriptor */
+ 	char rfcomm_buf[256];
+ 	char io_buf[CHANNEL_FRAME_SIZE + AST_FRIENDLY_OFFSET];
+-	struct ast_smoother *bt_out_smoother;			/* Packetizes outgoing PCM for the current SCO connection. */
++	struct ast_smoother *bt_out_smoother;			/* Packetizes outgoing PCM for the current host transport. */
+ 	struct ast_smoother *bt_in_smoother;			/* our smoother, for making "normal" CHANNEL_FRAME_SIZEed byte frames */
+ 	int sco_socket;					/* sco socket descriptor */
+-	uint16_t sco_handle;
+ 	uint16_t sco_mtu;
+ 	uint16_t sco_tx_size;
+ 	pthread_t monitor_thread;			/* monitor thread handle */
+@@ -261,7 +245,8 @@
+ static int sco_write(int s, char *buf, int len);
+ static int sco_accept(int *id, int fd, short events, void *data);
+ static int sco_bind(struct adapter_pvt *adapter);
+-static void sco_update_tx_size(struct mbl_pvt *pvt);
++static void sco_configure_socket(struct mbl_pvt *pvt);
++static void sco_observe_packet(struct mbl_pvt *pvt, unsigned int size);
+ 
+ static void *do_sco_listen(void *data);
+ static int sdp_search(char *addr, int profile);
+@@ -875,7 +860,7 @@
+ 	else
+ 		pvt->do_alignment_detection = 0;
+ 
+-	ast_smoother_reset(pvt->bt_out_smoother, pvt->sco_tx_size ? pvt->sco_tx_size : LEGACY_SCO_FRAME_SIZE);
++	ast_smoother_reset(pvt->bt_out_smoother, pvt->sco_tx_size ? pvt->sco_tx_size : CHANNEL_FRAME_SIZE);
+ 	ast_smoother_reset(pvt->bt_in_smoother, CHANNEL_FRAME_SIZE);
+ 	ast_dsp_digitreset(pvt->dsp);
+ 
+@@ -1160,6 +1145,7 @@
+ 				ast_channel_set_fd(ast, 0, -1);
+ 				close(pvt->sco_socket);
+ 				pvt->sco_socket = -1;
++				pvt->sco_tx_size = 0;
+ 				ast_smoother_reset(pvt->bt_in_smoother, CHANNEL_FRAME_SIZE);
+ 			}
+ 
+@@ -1168,11 +1154,12 @@
+ 			goto e_return;
+ 		}
+ 
+-		/* CVSD is exposed to userspace as signed 16-bit PCM. */
++		/* The socket carries signed 16-bit PCM, not on-air CVSD bytes. */
+ 		if (r % 2) {
+ 			fr = &ast_null_frame;
+ 			goto e_return;
+ 		}
++		sco_observe_packet(pvt, r);
+ 		pvt->fr.datalen = r;
+ 		pvt->fr.samples = r / 2;
+ 
+@@ -1209,13 +1196,13 @@
+ 		CHANNEL_DEADLOCK_AVOIDANCE(ast);
+ 	}
+ 
+-	if (pvt->sco_socket != -1) {
+-		sco_update_tx_size(pvt);
+-		if (pvt->sco_tx_size) {
+-			ast_smoother_feed(pvt->bt_out_smoother, frame);
+-			while ((f = ast_smoother_read(pvt->bt_out_smoother))) {
+-				sco_write(pvt->sco_socket, f->data.ptr, f->datalen);
+-			}
++	/* In particular for USB, wait for a received host packet. SCO_OPTIONS
++	 * is a maximum, and the eSCO event describes the radio payload.
++	 */
++	if (pvt->sco_socket != -1 && pvt->sco_tx_size) {
++		ast_smoother_feed(pvt->bt_out_smoother, frame);
++		while ((f = ast_smoother_read(pvt->bt_out_smoother))) {
++			sco_write(pvt->sco_socket, f->data.ptr, f->datalen);
+ 		}
+ 	}
+ 
+@@ -1923,213 +1910,42 @@
+ 
+ }
+ 
+-static void sco_read_event(struct sco_parameters *params, const uint8_t *data, size_t size)
+-{
+-	if (size < 3 || data[0] != HCI_EVENT_PKT || size != 3u + data[2]) {
+-		return;
+-	}
+-
+-	switch (data[1]) {
+-	case EVT_SYNC_CONN_COMPLETE: {
+-		evt_sync_conn_complete evt;
+-
+-		if (data[2] != sizeof(evt)) {
+-			return;
+-		}
+-		memcpy(&evt, data + 3, sizeof(evt));
+-		if (!evt.status && (evt.link_type == SCO_LINK || evt.link_type == ESCO_LINK)) {
+-			bacpy(&params->peer, &evt.bdaddr);
+-			params->handle = btohs(evt.handle);
+-			params->rx_len = btohs(evt.rx_pkt_len);
+-			params->tx_len = btohs(evt.tx_pkt_len);
+-			params->legacy = evt.link_type == SCO_LINK && !params->tx_len;
+-			params->valid = 1;
+-		}
+-		break;
+-	}
+-	case EVT_CONN_COMPLETE: {
+-		evt_conn_complete evt;
+-
+-		if (data[2] != sizeof(evt)) {
+-			return;
+-		}
+-		memcpy(&evt, data + 3, sizeof(evt));
+-		if (!evt.status && evt.link_type == SCO_LINK) {
+-			bacpy(&params->peer, &evt.bdaddr);
+-			params->handle = btohs(evt.handle);
+-			params->rx_len = 0;
+-			params->tx_len = 0;
+-			params->legacy = 1;
+-			params->valid = 1;
+-		}
+-		break;
+-	}
+-	case EVT_SYNC_CONN_CHANGED: {
+-		evt_sync_conn_changed evt;
+-
+-		if (data[2] != sizeof(evt)) {
+-			return;
+-		}
+-		memcpy(&evt, data + 3, sizeof(evt));
+-		if (!evt.status && params->valid && params->handle == btohs(evt.handle)) {
+-			params->rx_len = btohs(evt.rx_pkt_len);
+-			params->tx_len = btohs(evt.tx_pkt_len);
+-			params->legacy = 0;
+-		}
+-		break;
+-	}
+-	case EVT_DISCONN_COMPLETE: {
+-		evt_disconn_complete evt;
+-
+-		if (data[2] != sizeof(evt)) {
+-			return;
+-		}
+-		memcpy(&evt, data + 3, sizeof(evt));
+-		if (!evt.status && params->valid && params->handle == btohs(evt.handle)) {
+-			params->valid = 0;
+-		}
+-		break;
+-	}
+-	}
+-}
+-
+-static uint16_t sco_packet_size(const struct sco_parameters *params,
+-	const bdaddr_t *peer, uint16_t handle, uint16_t mtu)
+-{
+-	uint16_t size;
+-
+-	if (!params->valid || params->handle != handle || bacmp(&params->peer, peer)) {
++static uint16_t sco_host_packet_size(unsigned int received, unsigned int mtu)
++{
++	if (received < 2 || received % 2 || received > CHANNEL_FRAME_SIZE || mtu < 2) {
+ 		return 0;
+ 	}
+-	/* Older SCO events do not report packet lengths. Keep their existing
+-	 * framing, within the socket limit. An eSCO size must match the event.
+-	 */
+-	size = params->legacy ? MIN(LEGACY_SCO_FRAME_SIZE, mtu & ~1) : params->tx_len;
+-	if (size < 2 || size % 2 || size > mtu || size > CHANNEL_FRAME_SIZE) {
+-		return 0;
+-	}
+-	return size;
+-}
+-
+-static void sco_drain_events(struct adapter_pvt *adapter)
+-{
+-	uint8_t data[3 + UINT8_MAX];
+-	int i;
+-
+-	for (i = 0; i < 32; ++i) {
+-		ssize_t size = recv(adapter->sco_event_socket, data, sizeof(data), MSG_DONTWAIT);
+-		if (size <= 0) {
+-			break;
+-		}
+-		sco_read_event(&adapter->sco_parameters, data, size);
+-	}
+-}
+-
+-static int sco_event_ready(int *id, int fd, short events, void *data)
+-{
+-	struct adapter_pvt *adapter = data;
+-
+-	ast_mutex_lock(&adapter->sco_event_lock);
+-	if (events & (AST_IO_ERR | AST_IO_HUP | AST_IO_NVAL)) {
+-		close(adapter->sco_event_socket);
+-		adapter->sco_event_socket = -1;
+-		adapter->sco_event_id = NULL;
+-		adapter->sco_parameters.valid = 0;
+-		ast_mutex_unlock(&adapter->sco_event_lock);
+-		return 0;
+-	}
+-	sco_drain_events(adapter);
+-	ast_mutex_unlock(&adapter->sco_event_lock);
+-	return 1;
+-}
+-
+-static void sco_update_tx_size(struct mbl_pvt *pvt)
+-{
+-	struct adapter_pvt *adapter = pvt->adapter;
+-	uint16_t size;
+-
+-	ast_mutex_lock(&adapter->sco_event_lock);
+-	size = sco_packet_size(&adapter->sco_parameters, &pvt->addr,
+-		pvt->sco_handle, pvt->sco_mtu);
+-	ast_mutex_unlock(&adapter->sco_event_lock);
++	return MIN(received, mtu & ~1u);
++}
++
++static void sco_observe_packet(struct mbl_pvt *pvt, unsigned int received)
++{
++	uint16_t size = sco_host_packet_size(received, pvt->sco_mtu);
++
+ 	if (size != pvt->sco_tx_size) {
+ 		pvt->sco_tx_size = size;
+-		ast_smoother_reset(pvt->bt_out_smoother, size ? size : LEGACY_SCO_FRAME_SIZE);
+-		if (size) {
+-			ast_debug(1, "[%s] SCO TX packet size %u, socket MTU %u, handle %u\n",
+-				pvt->id, (unsigned int)size, (unsigned int)pvt->sco_mtu,
+-				(unsigned int)pvt->sco_handle);
+-		}
++		/* Discard an old partial output packet on a transport size change. */
++		ast_smoother_reset(pvt->bt_out_smoother, size ? size : CHANNEL_FRAME_SIZE);
++		ast_debug(1, "[%s] SCO host TX size %u, received %u, socket MTU %u\n",
++			pvt->id, (unsigned int)size, received, (unsigned int)pvt->sco_mtu);
+ 	}
+ }
+ 
+ static void sco_configure_socket(struct mbl_pvt *pvt)
+ {
+-	struct adapter_pvt *adapter = pvt->adapter;
+ 	struct sco_options options;
+-	struct sco_conninfo info;
+ 	socklen_t length = sizeof(options);
+ 
+ 	pvt->sco_mtu = 0;
+ 	pvt->sco_tx_size = 0;
+-	pvt->sco_handle = UINT16_MAX;
+-	ast_smoother_reset(pvt->bt_out_smoother, LEGACY_SCO_FRAME_SIZE);
++	ast_smoother_reset(pvt->bt_out_smoother, CHANNEL_FRAME_SIZE);
+ 	ast_smoother_reset(pvt->bt_in_smoother, CHANNEL_FRAME_SIZE);
+ 	if (getsockopt(pvt->sco_socket, SOL_SCO, SCO_OPTIONS, &options, &length)
+ 		|| length != sizeof(options)) {
++		ast_log(LOG_WARNING, "[%s] cannot read SCO socket MTU\n", pvt->id);
+ 		return;
+ 	}
+-	length = sizeof(info);
+-	if (getsockopt(pvt->sco_socket, SOL_SCO, SCO_CONNINFO, &info, &length)
+-		|| length != sizeof(info)) {
+-		return;
+-	}
+-	pvt->sco_handle = info.hci_handle;
+ 	pvt->sco_mtu = options.mtu;
+-
+-	/* The kernel may wake accept() before the HCI callback runs. */
+-	ast_mutex_lock(&adapter->sco_event_lock);
+-	if (adapter->sco_event_socket >= 0) {
+-		sco_drain_events(adapter);
+-	}
+-	ast_mutex_unlock(&adapter->sco_event_lock);
+-	sco_update_tx_size(pvt);
+-}
+-
+-static int sco_open_events(struct adapter_pvt *adapter)
+-{
+-	struct hci_filter filter, actual;
+-	socklen_t length = sizeof(actual);
+-	char address[18];
+-	int dev_id, fd;
+-
+-	ba2str(&adapter->addr, address);
+-	dev_id = hci_devid(address);
+-	if (dev_id < 0 || (fd = hci_open_dev(dev_id)) < 0) {
+-		return -1;
+-	}
+-	hci_filter_clear(&filter);
+-	hci_filter_set_ptype(HCI_EVENT_PKT, &filter);
+-	hci_filter_set_event(EVT_SYNC_CONN_COMPLETE, &filter);
+-	hci_filter_set_event(EVT_SYNC_CONN_CHANGED, &filter);
+-	hci_filter_set_event(EVT_CONN_COMPLETE, &filter);
+-	hci_filter_set_event(EVT_DISCONN_COMPLETE, &filter);
+-	if (setsockopt(fd, SOL_HCI, HCI_FILTER, &filter, sizeof(filter))
+-		|| getsockopt(fd, SOL_HCI, HCI_FILTER, &actual, &length)
+-		|| !hci_filter_test_event(EVT_SYNC_CONN_COMPLETE, &actual)
+-		|| !hci_filter_test_event(EVT_SYNC_CONN_CHANGED, &actual)) {
+-		close(fd);
+-		return -1;
+-	}
+-	adapter->sco_event_id = ast_io_add(adapter->accept_io, fd, sco_event_ready, AST_IO_IN, adapter);
+-	if (!adapter->sco_event_id) {
+-		close(fd);
+-		return -1;
+-	}
+-	ast_mutex_lock(&adapter->sco_event_lock);
+-	adapter->sco_event_socket = fd;
+-	ast_mutex_unlock(&adapter->sco_event_lock);
+-	return 0;
+ }
+ 
+ /*!
+@@ -4441,6 +4257,7 @@
+ 					goto e_cleanup;
+ 				}
+ 
++				sco_configure_socket(pvt);
+ 				pvt->incoming = 1;
+ 
+ 				if (!(chan = mbl_new(AST_STATE_UP, pvt, NULL, NULL, NULL))) {
+@@ -4449,7 +4266,6 @@
+ 					goto e_cleanup;
+ 				}
+ 
+-				sco_configure_socket(pvt);
+ 				ast_channel_set_fd(chan, 0, pvt->sco_socket);
+ 
+ 				ast_channel_exten_set(chan, "s");
+@@ -4570,9 +4386,6 @@
+ 	struct adapter_pvt *adapter = (struct adapter_pvt *) data;
+ 
+ 	while (!check_unloading()) {
+-		if (adapter->sco_event_socket < 0) {
+-			sco_open_events(adapter);
+-		}
+ 		/* Audio is handled by the channel fd; wait for new SCO connections.
+ 		 * Keep a finite timeout so an unload signal sent before poll cannot
+ 		 * leave this thread waiting indefinitely.
+@@ -4673,13 +4486,6 @@
+ 		goto e_destroy_accept_io;
+ 	}
+ 
+-	ast_mutex_init(&adapter->sco_event_lock);
+-	adapter->sco_event_socket = -1;
+-	if (sco_open_events(adapter)) {
+-		ast_log(LOG_ERROR, "Skipping adapter %s. Unable to read negotiated SCO parameters.\n", adapter->id);
+-		goto e_destroy_io;
+-	}
+-
+ 	/* bind the sco listener socket */
+ 	if (sco_bind(adapter) < 0) {
+ 		ast_log(LOG_ERROR, "Skipping adapter %s. Error binding audio connection listener socket.\n", adapter->id);
+@@ -4711,10 +4517,6 @@
+ e_close_sco:
+ 	close(adapter->sco_socket);
+ e_destroy_io:
+-	if (adapter->sco_event_socket >= 0) {
+-		close(adapter->sco_event_socket);
+-	}
+-	ast_mutex_destroy(&adapter->sco_event_lock);
+ 	io_context_destroy(adapter->io);
+ e_destroy_accept_io:
+ 	io_context_destroy(adapter->accept_io);
+@@ -4792,7 +4594,7 @@
+ 	pvt->has_sms = 1;
+ 
+ 	/* setup the bt_out_smoother */
+-	if (!(pvt->bt_out_smoother = ast_smoother_new(LEGACY_SCO_FRAME_SIZE))) {
++	if (!(pvt->bt_out_smoother = ast_smoother_new(CHANNEL_FRAME_SIZE))) {
+ 		ast_log(LOG_ERROR, "Skipping device %s. Error setting up frame bt_out_smoother.\n", cat);
+ 		goto e_free_pvt;
+ 	}
+@@ -5013,10 +4815,6 @@
+ 	AST_RWLIST_WRLOCK(&adapters);
+ 	while ((adapter = AST_RWLIST_REMOVE_HEAD(&adapters, entry))) {
+ 		close(adapter->sco_socket);
+-		if (adapter->sco_event_socket >= 0) {
+-			close(adapter->sco_event_socket);
+-		}
+-		ast_mutex_destroy(&adapter->sco_event_lock);
+ 		io_context_destroy(adapter->io);
+ 		io_context_destroy(adapter->accept_io);
+ 		hci_close_dev(adapter->hci_socket);

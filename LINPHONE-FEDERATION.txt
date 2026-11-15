@@ -1,0 +1,83 @@
+PUBLIC CASE-STUDY COPY: identifiers replaced. Historical commands and hashes
+are not current deployment instructions. Start with README.md and docs/INDEX.md.
+Private snapshots/captures referenced below are deliberately excluded.
+
+Дополнение 14 ноября, 19:35: по решению пользователя все вызовы к Linphone
+переведены на собственный домен без учётных данных сервиса. 612 и 613 теперь
+оба используют этот путь. Входящие с домашней SIM идут только в Linphone;
+подготовлена авторизованная линия 1003 на нашей АТС для исходящих через SIM.
+Текущая схема и состояние приёмки: ROAMING.txt. Ниже — история этого этапа.
+
+Прямой вызов в Linphone от собственного SIP-домена — 14 ноября 2026
+
+Отправитель: sip:1002@home.example.net.
+Получатель: sip:traveler-example@sip.linphone.org:5061;transport=tls.
+Тестовый номер со стационарного: 613. Прежний номер 612 сохранён.
+Состояние: 14 ноября в 19:25 по Израилю пользователь подтвердил звонок,
+звук в обе стороны и правильный Caller ID «1002». Маршрут оставлен рабочим.
+
+Endpoint linphone-federation: без outbound_auth и outbound_proxy,
+без REGISTER. Используется действующий transport-tls-public с проверкой
+сертификата сервера и публичными адресами Contact/SDP. Звук SRTP/SDES,
+media_encryption_optimistic=no, кодеки opus/ulaw/alaw, use_avpf=no — как
+у ранее проверенного исходящего маршрута 612. Входящие предложения AVPF
+и исходящий SAVP — разные направления согласования; 612 работал с SAVP.
+На обоих плечах установлен прежний RtpSourceReset. Рабочие конфигурации
+612, публичного входа, Bluetooth и телефона не менялись.
+
+Локальные источники:
+  linphone-push/config/pjsip_linphone_federation.conf
+  linphone-push/config/extensions_linphone_federation.conf
+На .128 одноимённые файлы находятся в /etc/asterisk и включены через
+pjsip.conf и extensions.conf. Перечитаны PJSIP и dialplan, без рестарта.
+Перед изменением: 0 активных каналов, около 64 GiB свободно на системном томе.
+Резервная копия базовых файлов: /var/backups/asterisk-linphone-federation/20261114-192432.
+Подтверждение загруженных параметров: diagnostics/2026-11-14-linphone-federation/install.json.
+
+Контрольный вызов 19:25:17–19:25:39 (UTC+2)
+Внешний INVITE отправлен по TLS на 192.0.2.1:5061:
+  From: <sip:1002@home.example.net>
+  To: <sip:traveler-example@sip.linphone.org>
+В этом внешнем диалоге нет Authorization/Proxy-Authorization, нет вызова
+проверки пароля 401/407 и нет REGISTER. Локальные 401 при авторизации
+стационарного на Asterisk ожидаемы и относятся к другому плечу.
+Ответы Linphone: 100 Trying -> 110 Push sent -> 180 Ringing -> 200 OK.
+180 получен примерно через 6 секунд, ответ через 11 секунд после INVITE.
+Предложение и ответ SDP: RTP/SAVP, SDES AES_CM_128_HMAC_SHA1_80.
+CDR: ANSWERED, duration=21, billsec=10. Время CDR в UTC:
+17:25:17, ответ 17:25:28, завершение 17:25:39.
+Пользователь подтвердил двустороннюю речь и Caller ID «1002» вместо
+«traveler-example», назвав этот маршрут правильным. Вызов завершён из Linphone,
+BYE/200 OK прошли на обоих плечах. Push отправлен сервером; пробуждение
+из длительного фонового состояния этим тестом отдельно не доказано.
+После звонка 0 каналов/вызовов, 1002 Avail, home-iphone Yes/Free.
+Захват выключен и очищен. Измерений задержки речи и длительной стабильности
+нет; проверен один короткий разговор, клиент был в домашней Wi-Fi-сети.
+Путь Asterisk -> публичный сервер Linphone при этом действительно внешний.
+
+Доказательства без паролей и ключей SRTP:
+  diagnostics/2026-11-14-linphone-federation/call-1-sip-redacted.json
+  diagnostics/2026-11-14-linphone-federation/final-state.json
+protocol_facts фиксирует наличие заголовков авторизации до удаления их
+значений. Исходники двух конфигов совпали с установленными по SHA256.
+
+Повторное применение после обновления
+Сначала восстановить/проверить публичный транспорт и его сертификат по
+PUBLIC-SIP.txt, а также модуль RtpSourceReset по recovery/2026-11-14/RESTORE.txt.
+Сравнить действующие файлы, сохранить копии, установить два конфигурационных
+файла из linphone-push/config/ в /etc/asterisk (root:asterisk, 0640).
+Добавить по одному include, если отсутствуют:
+  В pjsip.conf: #include pjsip_linphone_federation.conf
+  В extensions.conf: #include extensions_linphone_federation.conf
+Убедиться, что 613 не назначен другому маршруту. Выполнить:
+  asterisk -rx 'module reload res_pjsip.so'
+  asterisk -rx 'dialplan reload'
+Проверить endpoint linphone-federation (пустые outbound_auth/outbound_proxy),
+613@from-direct-ip-phone, TLS/SRTP, Caller ID и речь контрольным разговором.
+При новом ABI сначала пересобрать RtpSourceReset; старый .so не копировать
+вслепую. Учётные данные Linphone для этого маршрута не требуются.
+
+Откат только теста: при отсутствии активного тестового звонка удалить
+два новых include и два новых файла, затем module reload res_pjsip.so
+и dialplan reload. Не восстанавливать весь базовый файл поверх более
+поздних правок; сначала сравнить. Рабочий 612 и прежний auth не удалять.
