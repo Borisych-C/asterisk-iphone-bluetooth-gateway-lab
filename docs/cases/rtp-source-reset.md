@@ -14,7 +14,9 @@ Opt-in RtpSourceReset framehook resets translator sequence history on AST_CONTRO
 
 ## Evidence and limits
 
-Isolated real PCMA→PCM test: failing phases 0/50 before; 450/450 correct after; an extra genuinely late packet still dropped. Real calls confirmed. Rebuild after ABI changes; upstream bug status must be checked separately.
+A separate unprivileged Noble 20.6.0 instance yielded 250/450 valid PCMA-to-PCM frames, with complete loss in four of nine phases. With the local workaround, 450/450 frames were valid and an extra late packet produced no additional PCM. The package patch is tracked by Debian and Ubuntu. Rebuild the workaround against the target ABI.
+
+[Per-phase results and exact reproduction commands](../../research/rtp-source-reset.md).
 
 ## Code and reproduction
 
@@ -22,3 +24,7 @@ Isolated real PCMA→PCM test: failing phases 0/50 before; 450/450 correct after
 - [Test or detailed evidence](../../recovery/2026-11-14/work/isolated-rtp.py)
 
 Read [agent instructions](../../AGENTS.md) before executing scripts. A test may place a real call, send SMS or change a live system; inspect its effect first.
+
+## Reports
+
+[Debian #1150408](https://bugs.debian.org/1150408) · [Ubuntu #2053070](https://bugs.launchpad.net/ubuntu/+source/asterisk/+bug/2053070) · [Published results in Asterisk #1324](https://github.com/asterisk/asterisk/issues/1324#issuecomment-7140548093).

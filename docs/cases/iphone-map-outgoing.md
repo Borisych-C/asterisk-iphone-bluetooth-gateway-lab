@@ -14,7 +14,7 @@ Use UTF-8 bMessage with originator/recipient structure; distinguish queued, subm
 
 ## Evidence and limits
 
-An empty originator vCard was added, but the user also changed conversation send mode: its individual causal effect is not proven. iPhone may choose iMessage. Long multipart SMS and carrier delivery receipts unverified.
+One accepted upload was followed by a delivery failure on the phone. A later new message arrived automatically. The originator vCard and phone send mode both changed. Long multipart messages and carrier receipts remain unverified. BlueZ #2897 requests an API documentation cross-reference.
 
 ## Code and reproduction
 
@@ -22,3 +22,7 @@ An empty originator vCard was added, but the user also changed conversation send
 - [Test or detailed evidence](../../sms-bridge/tests/test_outgoing.py)
 
 Read [agent instructions](../../AGENTS.md) before executing scripts. A test may place a real call, send SMS or change a live system; inspect its effect first.
+
+## Reports
+
+[BlueZ documentation proposal #2897](https://github.com/bluez/bluez/issues/2897).

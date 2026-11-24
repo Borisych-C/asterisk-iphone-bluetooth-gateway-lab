@@ -23,6 +23,6 @@ These are observed device behaviors, not universal manufacturer guarantees. Hard
 
 ## T780P desk phone
 
-Manufacturer was not labelled. Russian menus did not imply Unicode SIP-message display. Bytes were photographed and mapped empirically; extended glyphs improved Cyrillic approximation. NUL truncated text and most control bytes produced no useful glyphs. [Character table](cases/t780p-character-map.md). Original photos/device web dumps are intentionally not published.
+The device label alone did not identify the manufacturer. The service request went to LVswitch, whose T780 product family matched the documented hardware and firmware identifiers. Russian menus did not imply Unicode SIP-message display. Bytes were photographed and mapped empirically; extended glyphs improved Cyrillic approximation. NUL truncated text and most control bytes produced no useful glyphs. [Character table](cases/t780p-character-map.md). Original photos/device web dumps are intentionally not published.
 
 The desk phone was a diagnostic endpoint, not required in the final roaming topology. The final Linphone text path preserves Russian and Hebrew without transliteration.

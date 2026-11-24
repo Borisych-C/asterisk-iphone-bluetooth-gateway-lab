@@ -14,7 +14,9 @@ Keep call lifecycle separate from audio socket lifecycle; return ast_null_frame,
 
 ## Evidence and limits
 
-Model tests cover partial frames, EAGAIN/EINTR, EOF, reset and reconnect. Real calls survived replacement. Cause of every kernel Bluetooth warning was not established.
+A real 20.6.0 call survived SCO replacement with the local correction. With a nonblocking socket pair and a model smoother, the stock callback from 20.22.0, 22.12.0, 24.0.0 and master cfb0aa2a returned NULL after 48 bytes and EAGAIN. The corrected regression test covers EOF, reset and reconnect.
+
+To repeat the stock failure on Linux, download the chosen upstream addons/chan_mobile.c and pass its path to [check-stock-sco-read.py](../../recovery/2026-11-14/work/check-stock-sco-read.py). The script prints the callback return, buffered byte count and errno. Exit 1 with frame=NULL reproduces the failure. The corrected test below verifies recovery.
 
 ## Code and reproduction
 
@@ -22,3 +24,7 @@ Model tests cover partial frames, EAGAIN/EINTR, EOF, reset and reconnect. Real c
 - [Test or detailed evidence](../../recovery/2026-11-14/work/test.c)
 
 Read [agent instructions](../../AGENTS.md) before executing scripts. A test may place a real call, send SMS or change a live system; inspect its effect first.
+
+## Reports
+
+[Asterisk #2336](https://github.com/asterisk/asterisk/issues/2336).

@@ -4,7 +4,7 @@
 
 This repository is a troubleshooting knowledge base with source code, not a turnkey appliance. It documents a working local installation and its limits. Start with the symptom index; do not deploy every historical workaround.
 
-**[Browsable case website](https://borisych-c.github.io/asterisk-iphone-bluetooth-gateway-lab/)** · **[Symptom → diagnosis → fix → test](docs/INDEX.md)** · **[Phone/client quirks](docs/DEVICE-QUIRKS.md)** · **[Agent instructions](AGENTS.md)** · **[Русский](README.ru.md)**
+**[Browsable case website](https://borisych-c.github.io/asterisk-iphone-bluetooth-gateway-lab/)** · **[Symptom → diagnosis → fix → test](docs/INDEX.md)** · **[Reports to maintainers](docs/UPSTREAM-REPORTS.md)** · **[Phone/client quirks](docs/DEVICE-QUIRKS.md)** · **[Agent instructions](AGENTS.md)** · **[Русский](README.ru.md)**
 
 ## Most useful entry points
 

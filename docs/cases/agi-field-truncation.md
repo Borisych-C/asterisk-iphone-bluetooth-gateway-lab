@@ -14,7 +14,7 @@ Read exact raw byte length reported by LEN; validate delimiters and UTF-8. Keep 
 
 ## Evidence and limits
 
-Live authenticated TLS check verified hash equality of URI, Unicode multiline body, Call-ID and CSeq. Regression tests vary lengths and embedded delimiters. Root cause inside the specific Base64 implementation was not fully upstream-localized.
+The upstream buffer allocation defect is tracked in Asterisk #940 and fixed by #941. Tag 20.6.0 has the old sizing formula, and 20.11.0 has the correction. The separate gateway workaround was checked for byte equality of the full URI, multiline Unicode body, Call-ID and CSeq over authenticated TLS.
 
 ## Code and reproduction
 
@@ -22,3 +22,7 @@ Live authenticated TLS check verified hash equality of URI, Unicode multiline bo
 - [Test or detailed evidence](../../sms-bridge/tests/test_agi.py)
 
 Read [agent instructions](../../AGENTS.md) before executing scripts. A test may place a real call, send SMS or change a live system; inspect its effect first.
+
+## Reports
+
+[Asterisk #940](https://github.com/asterisk/asterisk/issues/940) · [Merged correction #941](https://github.com/asterisk/asterisk/pull/941).

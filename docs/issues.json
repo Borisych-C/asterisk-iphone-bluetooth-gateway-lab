@@ -14,10 +14,16 @@
       "evidence_level": "confirmed-reproduced",
       "diagnosis": "The old read path could return NULL after a partial frame or transient SCO failure. NULL means channel termination, not temporarily missing audio. The iPhone also replaced SCO around answer.",
       "resolution": "Keep call lifecycle separate from audio socket lifecycle; return ast_null_frame, discard incomplete buffers on disconnect and accept the replacement socket.",
-      "validation_and_limits": "Model tests cover partial frames, EAGAIN/EINTR, EOF, reset and reconnect. Real calls survived replacement. Cause of every kernel Bluetooth warning was not established.",
+      "validation_and_limits": "A real 20.6.0 call survived SCO replacement with the local correction. With a nonblocking socket pair and a model smoother, the stock callback from 20.22.0, 22.12.0, 24.0.0 and master cfb0aa2a returned NULL after 48 bytes and EAGAIN. The corrected regression test covers EOF, reset and reconnect.",
       "source": "recovery/2026-11-14/work/chan_mobile.c",
       "test_or_evidence": "recovery/2026-11-14/work/test.c",
-      "case": "docs/cases/sco-false-hangup.md"
+      "case": "docs/cases/sco-false-hangup.md",
+      "reports": [
+        {
+          "label": "Asterisk #2336",
+          "url": "https://github.com/asterisk/asterisk/issues/2336"
+        }
+      ]
     },
     {
       "id": "sco-host-packet-size",
@@ -31,10 +37,16 @@
       "evidence_level": "confirmed-local",
       "diagnosis": "An intermediate agent change confused on-air eSCO packet length with host PCM framing. The tested device used 60-byte radio values and 48-byte host blocks; socket MTU is a limit.",
       "resolution": "Observe valid received 16-bit PCM block length, bounded by SCO_OPTIONS; reset partial buffers when size or socket changes. Do not hard-code 48 or 60.",
-      "validation_and_limits": "Tests cover 48/60/96/120 and MTU bounds. This is host packet inference for the tested transport, not a claim that all Bluetooth devices negotiate identical RX/TX framing.",
+      "validation_and_limits": "The test covers 48/60/96/120-byte host blocks and socket MTU bounds. Hardware showed 48-byte host PCM and a 60-byte radio length. RX/TX framing on other transports still requires measurement.",
       "source": "recovery/2026-11-14/work/host_framing.inc",
       "test_or_evidence": "recovery/2026-11-14/work/test.c",
-      "case": "docs/cases/sco-host-packet-size.md"
+      "case": "docs/cases/sco-host-packet-size.md",
+      "reports": [
+        {
+          "label": "Measured framing in Asterisk #1664",
+          "url": "https://github.com/asterisk/asterisk/issues/1664#issuecomment-7140141387"
+        }
+      ]
     },
     {
       "id": "rtp-source-reset",
@@ -50,10 +62,24 @@
       "evidence_level": "confirmed-reproduced",
       "diagnosis": "The distribution translator patch retained old sequence history across a new SSRC. A smaller random new sequence looked late; RTP kept arriving but no PCM reached mbl_write.",
       "resolution": "Opt-in RtpSourceReset framehook resets translator sequence history on AST_CONTROL_SRCCHANGE. Keep late packet rejection for the same source. Inspect the installed distro code, not only upstream version tags.",
-      "validation_and_limits": "Isolated real PCMA\u2192PCM test: failing phases 0/50 before; 450/450 correct after; an extra genuinely late packet still dropped. Real calls confirmed. Rebuild after ABI changes; upstream bug status must be checked separately.",
+      "validation_and_limits": "A separate unprivileged Noble 20.6.0 instance yielded 250/450 valid PCMA-to-PCM frames, with complete loss in four of nine phases. With the local workaround, 450/450 frames were valid and an extra late packet produced no additional PCM. The package patch is tracked by Debian and Ubuntu. Rebuild the workaround against the target ABI.",
       "source": "recovery/2026-11-14/work/app_rtp_source_reset.c",
       "test_or_evidence": "recovery/2026-11-14/work/isolated-rtp.py",
-      "case": "docs/cases/rtp-source-reset.md"
+      "case": "docs/cases/rtp-source-reset.md",
+      "reports": [
+        {
+          "label": "Debian #1150408",
+          "url": "https://bugs.debian.org/1150408"
+        },
+        {
+          "label": "Ubuntu #2053070",
+          "url": "https://bugs.launchpad.net/ubuntu/+source/asterisk/+bug/2053070"
+        },
+        {
+          "label": "Published results in Asterisk #1324",
+          "url": "https://github.com/asterisk/asterisk/issues/1324#issuecomment-7140548093"
+        }
+      ]
     },
     {
       "id": "iphone-map-permission",
@@ -63,11 +89,17 @@
       ],
       "evidence_level": "observed-device",
       "diagnosis": "Working HFP pairing did not expose MAP permission initially. The first MAP request returned access denied. After reopening the Bluetooth device details the switch appeared.",
-      "resolution": "Pair/connect; issue one MAP access request; reopen Settings \u2192 Bluetooth \u2192 device info; enable Show Notifications. Then retry reading. Do not repeatedly re-pair as the first response.",
-      "validation_and_limits": "Observed on this iPhone, iOS version not recorded. This is a message access/notification permission, not proof of a separate send-SMS permission. Outgoing PushMessage was tested independently.",
+      "resolution": "Pair/connect; issue one MAP access request; reopen Settings → Bluetooth → device info; enable Show Notifications. Then retry reading. Do not repeatedly re-pair as the first response.",
+      "validation_and_limits": "Observed on one iPhone 16, with the original iOS build unrecorded. Enabling Show Notifications allowed reading. Outgoing PushMessage was tested separately. Apple acknowledged the private product feedback without a public case number.",
       "source": "sms-bridge/bridge.py",
       "test_or_evidence": "SMS-BRIDGE.txt",
-      "case": "docs/cases/iphone-map-permission.md"
+      "case": "docs/cases/iphone-map-permission.md",
+      "reports": [
+        {
+          "label": "Apple iPhone Product Feedback",
+          "url": "https://www.apple.com/feedback/iphone/"
+        }
+      ]
     },
     {
       "id": "iphone-map-metadata",
@@ -77,11 +109,17 @@
       ],
       "evidence_level": "confirmed-local",
       "diagnosis": "The iPhone re-reported one message with a timestamp one second earlier. A metadata-based identity treated it as new.",
-      "resolution": "Store sender/body digest and tolerate \u00b12 seconds; retain aliases for changed metadata keys. Do not resend old rows during migration.",
-      "validation_and_limits": "Different messages outside the window remain distinct. Two genuine identical messages from the same sender inside two seconds may coalesce. This is an explicit heuristic, not exactly-once delivery.",
+      "resolution": "Store sender/body digest and tolerate ±2 seconds; retain aliases for changed metadata keys. Do not resend old rows during migration.",
+      "validation_and_limits": "The same message returned with a timestamp one second earlier. The local tolerance is two seconds, so two genuine identical messages from one sender in that window may coalesce. The iPhone observation was included in Apple Product Feedback.",
       "source": "sms-bridge/bridge.py",
       "test_or_evidence": "sms-bridge/tests/test_bridge.py",
-      "case": "docs/cases/iphone-map-metadata.md"
+      "case": "docs/cases/iphone-map-metadata.md",
+      "reports": [
+        {
+          "label": "Apple iPhone Product Feedback",
+          "url": "https://www.apple.com/feedback/iphone/"
+        }
+      ]
     },
     {
       "id": "iphone-map-outgoing",
@@ -92,10 +130,16 @@
       "evidence_level": "observed-device",
       "diagnosis": "MAP completion means phone acceptance, not carrier delivery. One accepted transfer produced Not Delivered; manual SMS retry succeeded. A later new message arrived automatically after delay.",
       "resolution": "Use UTF-8 bMessage with originator/recipient structure; distinguish queued, submitting, handed-to-phone and unknown. Never automatically repeat an ambiguous cellular send.",
-      "validation_and_limits": "An empty originator vCard was added, but the user also changed conversation send mode: its individual causal effect is not proven. iPhone may choose iMessage. Long multipart SMS and carrier delivery receipts unverified.",
+      "validation_and_limits": "One accepted upload was followed by a delivery failure on the phone. A later new message arrived automatically. The originator vCard and phone send mode both changed. Long multipart messages and carrier receipts remain unverified. BlueZ #2897 requests an API documentation cross-reference.",
       "source": "sms-bridge/outgoing.py",
       "test_or_evidence": "sms-bridge/tests/test_outgoing.py",
-      "case": "docs/cases/iphone-map-outgoing.md"
+      "case": "docs/cases/iphone-map-outgoing.md",
+      "reports": [
+        {
+          "label": "BlueZ documentation proposal #2897",
+          "url": "https://github.com/bluez/bluez/issues/2897"
+        }
+      ]
     },
     {
       "id": "linphone-contact-selection",
@@ -106,10 +150,16 @@
       "evidence_level": "user-observed",
       "diagnosis": "User observed Linphone selecting another number from a multi-number contact. Separate malformed @ input also occurred. No upstream client code defect was independently proven.",
       "resolution": "Use sms-972501234567@home.example.net on the authenticated Home SIM account, select that exact SIP result. Strip sms- server-side before number normalization.",
-      "validation_and_limits": "The prefix bypass worked in the observed workflow. Treat as a UI workaround, not an established universal Linphone bug.",
+      "validation_and_limits": "The prefix workaround worked on the observed iOS 6.2.2 client. Source inspection on 6.2.2 and 6.2.4 found recipient rows omitting an address and a SIPS display formatting issue. The exact taps leading to the wrong number were not recorded.",
       "source": "sms-bridge/outgoing.py",
       "test_or_evidence": "sms-bridge/tests/test_outgoing.py",
-      "case": "docs/cases/linphone-contact-selection.md"
+      "case": "docs/cases/linphone-contact-selection.md",
+      "reports": [
+        {
+          "label": "Linphone iOS #1055",
+          "url": "https://github.com/BelledonneCommunications/linphone-iphone/issues/1055"
+        }
+      ]
     },
     {
       "id": "agi-field-truncation",
@@ -120,10 +170,20 @@
       "evidence_level": "confirmed-local",
       "diagnosis": "The original MESSAGE(to) was complete, but the tested BASE64_ENCODE/AGI path lost trailing bytes at some lengths. Short check addresses masked the problem.",
       "resolution": "Read exact raw byte length reported by LEN; validate delimiters and UTF-8. Keep message text out of argv/logs. Do not attribute this to the Base64 algorithm itself.",
-      "validation_and_limits": "Live authenticated TLS check verified hash equality of URI, Unicode multiline body, Call-ID and CSeq. Regression tests vary lengths and embedded delimiters. Root cause inside the specific Base64 implementation was not fully upstream-localized.",
+      "validation_and_limits": "The upstream buffer allocation defect is tracked in Asterisk #940 and fixed by #941. Tag 20.6.0 has the old sizing formula, and 20.11.0 has the correction. The separate gateway workaround was checked for byte equality of the full URI, multiline Unicode body, Call-ID and CSeq over authenticated TLS.",
       "source": "sms-bridge/sms-submit.agi",
       "test_or_evidence": "sms-bridge/tests/test_agi.py",
-      "case": "docs/cases/agi-field-truncation.md"
+      "case": "docs/cases/agi-field-truncation.md",
+      "reports": [
+        {
+          "label": "Asterisk #940",
+          "url": "https://github.com/asterisk/asterisk/issues/940"
+        },
+        {
+          "label": "Merged correction #941",
+          "url": "https://github.com/asterisk/asterisk/pull/941"
+        }
+      ]
     },
     {
       "id": "linphone-srtp-profile",
@@ -162,7 +222,7 @@
       "evidence_level": "confirmed-local",
       "diagnosis": "The tested router API range rule mapped multiple external RTP ports to one internal port. Separately, broad local_net classification on hairpin calls advertised a private Contact.",
       "resolution": "Use verified per-port forwarding and narrow transport local_net appropriate to topology. Check Contact/SDP, ACK and BYE in both LAN hairpin and truly external calls.",
-      "validation_and_limits": "16 separate RTP port mappings were tested. This does not prove all router range implementations are defective. Original agent range assumption was wrong for this API.",
+      "validation_and_limits": "Sagemcom F@ST 5670 HW 2.00, firmware SGFx10000381. Hairpin UDP probes to external 10000, 10002 and 10198 were delivered to internal 10000. Sixteen individual mappings preserved their ports. Return traffic was verified on 10000, 10006 and 10014. Direct WAN behavior of the original range rule was not isolated.",
       "source": "network/public-sip/router-forwarding.py",
       "test_or_evidence": "network/public-sip/probe.py",
       "case": "docs/cases/nat-rtp-range.md"
@@ -190,10 +250,16 @@
       "evidence_level": "observed-device",
       "diagnosis": "Localized menu fonts did not imply Unicode support for received messages. Actual glyphs differed from assumed encoding tables.",
       "resolution": "Use empirical byte charts and the recorded visual-russian-v2 mapping for this firmware. Control bytes yielded no useful extra alphabet; NUL truncated display.",
-      "validation_and_limits": "User approved visually readable approximations. This is not Unicode support or ordinary phonetic transliteration. Hebrew\u2192Russian\u2192glyph substitution was proposed for this debug phone, not used by the final Unicode Linphone bridge.",
+      "validation_and_limits": "On firmware V78.5.3.1 SVN13200 and hardware 18.01.01.0, incoming direct UTF-8 with an explicit charset still displayed incorrectly. ASCII was readable and the phone sent UTF-8 from its own web UI. These observations were sent privately to LVswitch service.",
       "source": "research/2026-11-14-message-encoding/visual-russian-v2.json",
       "test_or_evidence": "tools/send-byte-chart.py",
-      "case": "docs/cases/t780p-character-map.md"
+      "case": "docs/cases/t780p-character-map.md",
+      "reports": [
+        {
+          "label": "LVswitch service and support",
+          "url": "https://www.lvswitches.com/page/service-and-support.html"
+        }
+      ]
     },
     {
       "id": "linphone-uri-input",
@@ -222,6 +288,75 @@
       "source": "sms-bridge/outgoing.py",
       "test_or_evidence": "SMS-SEND.txt",
       "case": "docs/cases/notification-burst.md"
+    },
+    {
+      "id": "pjsip-message-charset",
+      "title": "Outbound SIP MESSAGE loses its explicit charset",
+      "keywords": [
+        "MessageSend",
+        "MESSAGE_DATA(Content-Type)",
+        "PJSIP",
+        "charset=UTF-8"
+      ],
+      "evidence_level": "confirmed-reproduced",
+      "diagnosis": "The parsed Content-Type header includes media parameters, but update_content_type() copies only media type and subtype into the outgoing body.",
+      "resolution": "Preserve parsed media parameters when constructing the outgoing message. A separate direct encoding test can isolate a legacy handset renderer.",
+      "validation_and_limits": "Ubuntu Noble 20.6.0 sent text/plain for text/plain with charset=UTF-8. The independent X-Probe-Type header retained the full value. The application/json control and both message bodies arrived intact. The same function was inspected in 22.12.0, 24.0.0 and master cfb0aa2a.",
+      "source": "research/message-content-type.md",
+      "test_or_evidence": "research/message-content-type.md",
+      "case": "docs/cases/pjsip-message-charset.md",
+      "reports": [
+        {
+          "label": "Asterisk #2339",
+          "url": "https://github.com/asterisk/asterisk/issues/2339"
+        }
+      ]
+    },
+    {
+      "id": "mobile-idle-polling",
+      "title": "Bluetooth SCO listener wakes about 1,000 times per second at idle",
+      "keywords": [
+        "chan_mobile",
+        "do_sco_listen",
+        "idle polling",
+        "voluntary context switches"
+      ],
+      "evidence_level": "confirmed-reproduced",
+      "diagnosis": "The listener polls the SCO accept context without waiting, then waits one millisecond on the empty audio I/O context.",
+      "resolution": "Wait for socket readiness on the accept context with a one-second upper bound for unload.",
+      "validation_and_limits": "On the tested 20.6.0 package the idle thread went from 981.34 to 1.00 voluntary context switches per second. Eight standalone scenarios passed in optimized and sanitizer builds. The patch applies without fuzz to three later releases and master.",
+      "source": "research/idle-wakeups/0001-mobile-idle-wait.patch",
+      "test_or_evidence": "research/idle-wakeups/README.md",
+      "case": "docs/cases/mobile-idle-polling.md",
+      "reports": [
+        {
+          "label": "Asterisk #2337",
+          "url": "https://github.com/asterisk/asterisk/issues/2337"
+        }
+      ]
+    },
+    {
+      "id": "iax-idle-trunk-timer",
+      "title": "IAX2 schedules 50 timer wakeups per second with no active trunks",
+      "keywords": [
+        "chan_iax2",
+        "trunkfreq",
+        "tpeers",
+        "timerfd"
+      ],
+      "evidence_level": "confirmed-reproduced",
+      "diagnosis": "At the default 20 ms trunk frequency the periodic timer remains armed when there are no runtime trunk peers.",
+      "resolution": "Start the timer under the peer list lock when the first peer is created. Stop it when cleanup removes the last peer, and update the active rate on reload.",
+      "validation_and_limits": "On the tested 20.6.0 package the idle network thread went from 49.99 to 1.00 voluntary context switches per second. A Linux timerfd harness covered failures and 1,000 creation/cleanup races. Earlier protocol checks used two isolated instances of the actual module.",
+      "source": "research/idle-wakeups/0002-iax-demand-trunk-timer.patch",
+      "test_or_evidence": "research/idle-wakeups/README.md",
+      "case": "docs/cases/iax-idle-trunk-timer.md",
+      "reports": [
+        {
+          "label": "Asterisk #2338",
+          "url": "https://github.com/asterisk/asterisk/issues/2338"
+        }
+      ]
     }
   ]
 }

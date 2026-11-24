@@ -14,7 +14,11 @@ Use verified per-port forwarding and narrow transport local_net appropriate to t
 
 ## Evidence and limits
 
-16 separate RTP port mappings were tested. This does not prove all router range implementations are defective. Original agent range assumption was wrong for this API.
+Sagemcom F@ST 5670 HW 2.00, firmware SGFx10000381. Hairpin UDP probes to external 10000, 10002 and 10198 were delivered to internal 10000. Sixteen individual mappings preserved their ports. Return traffic was verified on 10000, 10006 and 10014. Direct WAN behavior of the original range rule was not isolated.
+
+The original range used ExternalPort=10000, ExternalPortEndRange=10199 and InternalPort=10000. A trial with InternalPort=0 did not deliver the expected traffic. Individual mappings used matching external and internal ports from 10000 through 10015. External calls passed after the workaround. The original range test used LAN hairpin traffic.
+
+The [Broadband Forum TR-181 NAT model](https://github.com/BroadbandForum/cwmp-data-models/blob/master/tr-181-2-20-0-nat.xml) describes incrementing the target for each port in a range. The tested vendor API uses similar field names. Its conformance and the cause inside the firmware are unverified.
 
 ## Code and reproduction
 

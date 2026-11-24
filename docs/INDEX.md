@@ -19,5 +19,10 @@ Start with the symptom, not the component blamed first. Evidence levels distingu
 | Russian SIP MESSAGE is mojibake despite Russian menus | [t780p-character-map](cases/t780p-character-map.md) | observed-device |
 | SIP URI pasted into search fails or uses unexpected transport | [linphone-uri-input](cases/linphone-uri-input.md) | observed-client |
 | Seven service messages appear at once after one SMS | [notification-burst](cases/notification-burst.md) | confirmed-sender-only |
+| Outbound SIP MESSAGE loses its explicit charset | [pjsip-message-charset](cases/pjsip-message-charset.md) | confirmed-reproduced |
+| Bluetooth SCO listener wakes about 1,000 times per second at idle | [mobile-idle-polling](cases/mobile-idle-polling.md) | confirmed-reproduced |
+| IAX2 schedules 50 timer wakeups per second with no active trunks | [iax-idle-trunk-timer](cases/iax-idle-trunk-timer.md) | confirmed-reproduced |
+
+[Reports filed with upstream projects and vendors](UPSTREAM-REPORTS.md).
 
 Machine-readable index: [issues.json](issues.json). Device-first view: [DEVICE-QUIRKS.md](DEVICE-QUIRKS.md).

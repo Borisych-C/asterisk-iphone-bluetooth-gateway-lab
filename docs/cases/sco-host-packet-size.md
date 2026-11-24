@@ -14,7 +14,7 @@ Observe valid received 16-bit PCM block length, bounded by SCO_OPTIONS; reset pa
 
 ## Evidence and limits
 
-Tests cover 48/60/96/120 and MTU bounds. This is host packet inference for the tested transport, not a claim that all Bluetooth devices negotiate identical RX/TX framing.
+The test covers 48/60/96/120-byte host blocks and socket MTU bounds. Hardware showed 48-byte host PCM and a 60-byte radio length. RX/TX framing on other transports still requires measurement.
 
 ## Code and reproduction
 
@@ -22,3 +22,7 @@ Tests cover 48/60/96/120 and MTU bounds. This is host packet inference for the t
 - [Test or detailed evidence](../../recovery/2026-11-14/work/test.c)
 
 Read [agent instructions](../../AGENTS.md) before executing scripts. A test may place a real call, send SMS or change a live system; inspect its effect first.
+
+## Reports
+
+[Measured framing in Asterisk #1664](https://github.com/asterisk/asterisk/issues/1664#issuecomment-7140141387).

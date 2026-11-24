@@ -14,7 +14,7 @@ Store sender/body digest and tolerate ±2 seconds; retain aliases for changed me
 
 ## Evidence and limits
 
-Different messages outside the window remain distinct. Two genuine identical messages from the same sender inside two seconds may coalesce. This is an explicit heuristic, not exactly-once delivery.
+The same message returned with a timestamp one second earlier. The local tolerance is two seconds, so two genuine identical messages from one sender in that window may coalesce. The iPhone observation was included in Apple Product Feedback.
 
 ## Code and reproduction
 
@@ -22,3 +22,7 @@ Different messages outside the window remain distinct. Two genuine identical mes
 - [Test or detailed evidence](../../sms-bridge/tests/test_bridge.py)
 
 Read [agent instructions](../../AGENTS.md) before executing scripts. A test may place a real call, send SMS or change a live system; inspect its effect first.
+
+## Reports
+
+[Apple iPhone Product Feedback](https://www.apple.com/feedback/iphone/).

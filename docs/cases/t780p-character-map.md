@@ -14,7 +14,7 @@ Use empirical byte charts and the recorded visual-russian-v2 mapping for this fi
 
 ## Evidence and limits
 
-User approved visually readable approximations. This is not Unicode support or ordinary phonetic transliteration. Hebrew→Russian→glyph substitution was proposed for this debug phone, not used by the final Unicode Linphone bridge.
+On firmware V78.5.3.1 SVN13200 and hardware 18.01.01.0, incoming direct UTF-8 with an explicit charset still displayed incorrectly. ASCII was readable and the phone sent UTF-8 from its own web UI. These observations were sent privately to LVswitch service.
 
 ## Code and reproduction
 
@@ -22,3 +22,7 @@ User approved visually readable approximations. This is not Unicode support or o
 - [Test or detailed evidence](../../tools/send-byte-chart.py)
 
 Read [agent instructions](../../AGENTS.md) before executing scripts. A test may place a real call, send SMS or change a live system; inspect its effect first.
+
+## Reports
+
+[LVswitch service and support](https://www.lvswitches.com/page/service-and-support.html).
