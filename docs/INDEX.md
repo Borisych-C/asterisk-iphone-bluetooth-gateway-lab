@@ -22,6 +22,7 @@ Start with the symptom, not the component blamed first. Evidence levels distingu
 | Outbound SIP MESSAGE loses its explicit charset | [pjsip-message-charset](cases/pjsip-message-charset.md) | confirmed-reproduced |
 | Bluetooth SCO listener wakes about 1,000 times per second at idle | [mobile-idle-polling](cases/mobile-idle-polling.md) | confirmed-reproduced |
 | IAX2 schedules 50 timer wakeups per second with no active trunks | [iax-idle-trunk-timer](cases/iax-idle-trunk-timer.md) | confirmed-reproduced |
+| Gateway panel stalls during first Home Assistant setup | [ha-gateway-setup](cases/ha-gateway-setup.md) | confirmed-local |
 
 [Reports filed with upstream projects and vendors](UPSTREAM-REPORTS.md).
 

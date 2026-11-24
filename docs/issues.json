@@ -357,6 +357,24 @@
           "url": "https://github.com/asterisk/asterisk/issues/2338"
         }
       ]
+    },
+    {
+      "id": "ha-gateway-setup",
+      "title": "Gateway panel stalls during first Home Assistant setup",
+      "keywords": [
+        "Home Assistant custom integration",
+        "YAML import",
+        "async_setup",
+        "config entry",
+        "SIP forwarding dashboard"
+      ],
+      "evidence_level": "confirmed-local",
+      "diagnosis": "The gateway custom component stalled while importing its first Home Assistant config entry. Configuration validation had passed.",
+      "resolution": "Schedule the import in a Home Assistant task and return from domain setup. Perform the coordinator refresh and platform setup in the config-entry handler.",
+      "validation_and_limits": "The corrected installation exposed three dashboard tabs and 25 entities through the API. Nine isolated forwarding-policy tests passed. The route-status check and the live call tests cover different behaviors.",
+      "source": "docs/cases/ha-gateway-setup.md",
+      "test_or_evidence": "docs/cases/ha-gateway-setup.md",
+      "case": "docs/cases/ha-gateway-setup.md"
     }
   ]
 }
