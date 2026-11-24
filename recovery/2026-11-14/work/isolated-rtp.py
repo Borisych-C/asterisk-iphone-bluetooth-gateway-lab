@@ -1,5 +1,5 @@
 """Loopback-only SIP/RTP stream restart reproduction; never calls real devices."""
-import collections
+import argparse
 import audioop
 import json
 import os
@@ -9,20 +9,26 @@ import select
 import socket
 import struct
 import subprocess
-import sys
 import tempfile
 import time
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--fix', action='store_true', help='enable the installed RtpSourceReset module')
+parser.add_argument('--fix-module', type=Path, help='enable a specific locally built RtpSourceReset module')
+args = parser.parse_args()
+modules = '/usr/lib/x86_64-linux-gnu/asterisk/modules'
+fix = args.fix or args.fix_module is not None
+if fix:
+    reset_module = (args.fix_module or Path(modules) / 'app_rtp_source_reset.so').resolve(strict=True)
 root = Path(tempfile.mkdtemp(prefix='asterisk-rtp-restart-', dir='/tmp'))
 for name in ('etc', 'run', 'log', 'lib', 'spool'):
     (root/name).mkdir()
-modules = '/usr/lib/x86_64-linux-gnu/asterisk/modules'
-fix = '--fix' in sys.argv
 if fix:
     module_dir=root/'modules';module_dir.mkdir()
     for module in Path(modules).glob('*.so'):
-        (module_dir/module.name).symlink_to(module)
-    (module_dir/'app_rtp_source_reset.so').symlink_to('/home/gateway/asterisk-host-framing-20261114/built/app_rtp_source_reset.so')
+        if module.name != 'app_rtp_source_reset.so':
+            (module_dir/module.name).symlink_to(module)
+    (module_dir/'app_rtp_source_reset.so').symlink_to(reset_module)
     modules=str(module_dir)
 dirs = dict(astetcdir=root/'etc', astmoddir=modules, astvarlibdir=root/'lib',
             astdbdir=root/'lib', astkeydir=root/'lib/keys', astdatadir='/usr/share/asterisk',

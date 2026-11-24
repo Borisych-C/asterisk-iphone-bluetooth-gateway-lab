@@ -1,0 +1,27 @@
+--- a/addons/chan_mobile.c
++++ b/addons/chan_mobile.c
+@@ -4330,16 +4330,15 @@
+ 	struct adapter_pvt *adapter = (struct adapter_pvt *) data;
+ 
+ 	while (!check_unloading()) {
+-		/* check for new sco connections */
+-		if (ast_io_wait(adapter->accept_io, 0) == -1) {
+-			/* handle errors */
++		/* Audio is handled by the channel fd; wait for new SCO connections.
++		 * Keep a finite timeout so an unload signal sent before poll cannot
++		 * leave this thread waiting indefinitely.
++		 */
++		if (ast_io_wait(adapter->accept_io, 1000) == -1) {
++			if (errno == EINTR) {
++				continue;
++			}
+ 			ast_log(LOG_ERROR, "ast_io_wait() failed for adapter %s\n", adapter->id);
+-			break;
+-		}
+-
+-		/* handle audio data */
+-		if (ast_io_wait(adapter->io, 1) == -1) {
+-			ast_log(LOG_ERROR, "ast_io_wait() failed for audio on adapter %s\n", adapter->id);
+ 			break;
+ 		}
+ 	}
